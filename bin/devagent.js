@@ -74,7 +74,7 @@ async function initCmd(dir, o) {
       const list = M.modelsFor(r.tool, dir).models.map((m) => m.id).filter(Boolean).slice(0, 6);
       r.model = await ask(rl, `${label} 모델 (${core.TOOLS[r.tool]}, 비우려면 '-')`, r.model || "-", list);
       if (r.model === "-") r.model = "";
-      if (r.tool === "codex") r.reasoning = await ask(rl, `${label} 추론 강도`, r.reasoning, core.MODEL_HINTS.reasoning);
+      r.reasoning = await ask(rl, `${label} 추론 강도`, r.reasoning, r.tool === "claude" ? ["low", "medium", "high", "xhigh", "max"] : core.MODEL_HINTS.reasoning);
     }
     opts.git.visibility = await ask(rl, "GitHub 저장소 공개 여부", opts.git.visibility, ["private", "public"]);
     opts.git.pushOn = await ask(rl, "phase 완료 시 push", opts.git.pushOn, ["phase", "never"]);
@@ -126,8 +126,8 @@ async function main() {
       if (!s.config) return console.log("devagent 프로젝트가 아닙니다 (init 필요).");
       const c = s.config, L = s.login;
       console.log(`프로젝트  ${c.name} (${c.platform}) - ${s.dir}
-기획/검토 ${core.TOOLS[c.planner.tool]} ${c.planner.model || "(기본 모델)"}${c.planner.tool === "codex" ? ` [${c.planner.reasoning}]` : ""}
-개발      ${core.TOOLS[c.developer.tool]} ${c.developer.model || "(기본 모델)"}${c.developer.tool === "codex" ? ` [${c.developer.reasoning}]` : ""}
+기획/검토 ${core.TOOLS[c.planner.tool]} ${c.planner.model || "(기본 모델)"} [${c.planner.reasoning}]
+개발      ${core.TOOLS[c.developer.tool]} ${c.developer.model || "(기본 모델)"} [${c.developer.reasoning}]
 Git       ${c.git.visibility}, push: ${c.git.pushOn}, 빌드확인: ${c.git.buildCheck ? "on" : "off"}
 원격      ${s.remote || "(없음 - devagent repo)"}
 최근커밋  ${s.lastCommit || "(없음)"}

@@ -7,7 +7,7 @@ const DEFAULT_CONFIG = {
   name: "",
   platform: "web",
   planner: { tool: "codex", model: "", reasoning: "high" },     // model 빈 값 = 도구 기본 모델
-  developer: { tool: "claude", model: "sonnet", reasoning: "high" }, // reasoning은 codex일 때만 사용
+  developer: { tool: "claude", model: "sonnet", reasoning: "high" }, // reasoning: codex=model_reasoning_effort, claude=--effort
   git: { visibility: "private", pushOn: "phase", buildCheck: true },
   maxReviewRounds: 3,
   specFile: "docs/SPEC.md",
@@ -84,7 +84,8 @@ function devCmd(cfg, task) {
     return `codex exec${m}${r} --dangerously-bypass-approvals-and-sandbox ${q(task)}`;
   }
   const m = d.model ? ` --model ${d.model}` : "";
-  return `claude -p ${q(task)}${m} --permission-mode bypassPermissions`;
+  const e = d.reasoning ? ` --effort ${d.reasoning}` : "";
+  return `claude -p ${q(task)}${m}${e} --permission-mode bypassPermissions`;
 }
 
 const PLANNER_DOC = "docs/agents/PLANNER.md";

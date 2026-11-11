@@ -41,6 +41,8 @@ function serve({ dir, port }) {
           const M = require("../models");
           return send(res, 200, M.modelsFor(q.tool === "claude" ? "claude" : "codex", d, { refresh: q.refresh === "1" }));
         }
+        case "/api/progress":
+          return send(res, 200, require("../progress").progress(d));
         case "/api/verify-model": {
           const M = require("../models");
           return send(res, 200, M.verifyModel(d, q.tool, q.model));

@@ -79,6 +79,31 @@
   .progress { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; margin: 2px 0 10px; }
   .progress span { display: block; height: 100%; background: var(--ok); }
 
+  /* 진행 상황 */
+  .pg-top { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  .pg-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+  .pg-box h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .pg-big { font-size: 22px; font-weight: 700; }
+  .phase-list { list-style: none; padding: 0; margin: 8px 0 0; max-height: 220px; overflow: auto; }
+  .phase-list li { padding: 4px 6px; border-radius: 5px; display: flex; gap: 8px; align-items: baseline; }
+  .phase-list li.cur { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .phase-list li.done { color: var(--muted); }
+  .phase-list .ic { width: 1.2em; flex: none; text-align: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; margin: 0 6px 6px 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.live { background: var(--ok); animation: pulse 1.4s infinite; }
+  .dot.bad { background: var(--bad); } .dot.wait { background: #f59f00; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .feed { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  .feed li { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .feed li:last-child { border-bottom: 0; }
+  .feed .t { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .feed .x { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed a, .linkish { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .pg-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .muted { color: var(--muted); }
+  @media (max-width: 760px) { .pg-top, .pg-bottom { grid-template-columns: 1fr; } }
+
   @media (max-width: 760px) {
     .models { grid-template-columns: 1fr; }
     .docs { grid-template-columns: 1fr; }
@@ -101,6 +126,27 @@
       <input id="dir" placeholder="C:\Users\...\my-app">
       <button id="load">불러오기</button>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>진행 상황 <span class="right"><label class="muted" style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px"><input type="checkbox" id="autoRefresh" checked style="width:auto"> 자동 새로고침 (10초)</label><button class="small" id="pgRefresh">새로고침</button></span></h2>
+    <div class="pg-top">
+      <div class="pg-box">
+        <h3>Phase</h3>
+        <div id="pgPhase" class="muted">불러오는 중…</div>
+      </div>
+      <div class="pg-box">
+        <h3>지금 실행 중</h3>
+        <div id="pgAgents" class="muted">불러오는 중…</div>
+        <h3 style="margin-top:14px">빌드 (GitHub Actions)</h3>
+        <div id="pgCi" class="muted">불러오는 중…</div>
+      </div>
+    </div>
+    <div class="pg-bottom">
+      <div class="pg-box"><h3>기록</h3><ul class="feed" id="pgTimeline"></ul></div>
+      <div class="pg-box"><h3>최근 변경된 파일</h3><ul class="feed" id="pgFiles"></ul></div>
+    </div>
+    <p class="muted" style="margin:10px 0 0;font-size:12px" id="pgAt"></p>
   </section>
 
   <section class="card">
@@ -256,7 +302,7 @@ function md(src) {
 const ROLES = ["planner", "developer"];
 const listCache = {}; // tool → {source, models, errors}
 const SRC_LABEL = { container: "(컨테이너 로그인 계정 기준)", host: "(PC 로그인 계정 기준)", builtin: "", fallback: "(계정 목록을 못 가져옴 — 로그인 확인)" };
-const CLAUDE_NOTE = "Claude CLI는 모델 목록 기능이 없어 별칭/최신 모델을 표시합니다. 별칭은 계정에서 쓸 수 있는 최신 버전으로 연결됩니다. 계정에서 확인을 누르면 실제 호출로 확인합니다(토큰 소량).";
+const CLAUDE_NOTE = "Claude CLI는 모델 목록 기능이 없어 별칭/최신 모델을 표시합니다(별칭은 계정에서 쓸 수 있는 최신 버전으로 연결). 추론 강도는 --effort로 전달됩니다. 계정에서 확인을 누르면 실제 호출로 확인합니다(토큰 소량).";
 
 async function fetchList(tool, refresh) {
   if (listCache[tool] && !refresh) return listCache[tool];
@@ -267,10 +313,9 @@ async function fetchList(tool, refresh) {
 function fillLevels(role, keep) {
   const tool = $(role + "Tool").value, list = listCache[tool];
   const box = $(role + "ReasoningBox"), sel = $(role + "Reasoning");
-  box.hidden = tool !== "codex";
+  box.hidden = false;
   const m = list && list.models.find((x) => x.id === $(role + "Model").value);
   $(role + "Desc").textContent = tool === "claude" ? CLAUDE_NOTE : (m ? m.label : "");
-  if (tool !== "codex") return;
   const levels = m && m.levels && m.levels.length ? m.levels : meta.hints.reasoning;
   const cur = keep || sel.value;
   sel.innerHTML = "";
@@ -316,7 +361,7 @@ document.querySelectorAll("[data-verify]").forEach((b) => b.onclick = async () =
   } catch (e) { out.textContent = "✗ " + e.message; out.className = "bad"; }
   b.disabled = false;
 });
-const roleValue = (r) => ({ tool: $(r + "Tool").value, model: $(r + "Model").value, reasoning: $(r + "Tool").value === "codex" ? $(r + "Reasoning").value : (cfgCache && cfgCache[r].reasoning) || "high" });
+const roleValue = (r) => ({ tool: $(r + "Tool").value, model: $(r + "Model").value, reasoning: $(r + "Reasoning").value });
 
 // ---------- 설정 ----------
 function fill(cfg) {
@@ -337,6 +382,7 @@ async function load() {
   try { localStorage.setItem("devagent.dir", dir()); } catch {}
   $("status").innerHTML = "<dt>상태</dt><dd>불러오는 중…</dd>";
   loadDocs();
+  lastDocSig = ""; loadProgress();
   try {
     const p = await api("/api/project?dir=" + encodeURIComponent(dir()));
     cfgCache = p.config; fill(p.config);
@@ -412,6 +458,59 @@ $("docSave").onclick = async () => {
 };
 $("docsRefresh").onclick = () => loadDocs();
 window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+// ---------- 진행 상황 ----------
+const ago = (t) => {
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  return s < 60 ? "방금" : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전`;
+};
+const ICON = { commit: "⎇", report: "📝", review: "🔍", plan: "🗺" };
+let pgBusy = false, lastDocSig = "";
+async function loadProgress() {
+  if (pgBusy || !dir()) return;
+  pgBusy = true;
+  try {
+    const p = await api("/api/progress?dir=" + encodeURIComponent(dir()));
+    // Phase
+    const ph = p.phases;
+    if (!ph.exists) $("pgPhase").innerHTML = '<p class="muted" style="margin:0">아직 계획(docs/PLAN.md)이 없습니다. 요구사항을 확인하고 <b>3. 개발 시작</b>을 누르면 기획 담당이 분석해서 phase를 만듭니다.</p>';
+    else if (!ph.items.length) $("pgPhase").innerHTML = '<p class="muted" style="margin:0">PLAN.md에 체크박스(- [ ]) phase가 없습니다.</p>';
+    else {
+      const pct = Math.round(ph.done / ph.items.length * 100);
+      const cur = ph.current >= 0 ? ph.items[ph.current].title : "모든 phase 완료";
+      $("pgPhase").innerHTML = `<div><span class="pg-big">${ph.done}/${ph.items.length}</span> <span class="muted">완료 (${pct}%)</span></div>
+        <div class="progress" style="margin-top:6px"><span style="width:${pct}%"></span></div>
+        <div style="font-size:13px">현재: <b>${esc(cur)}</b></div>
+        <ul class="phase-list">${ph.items.map((x, i) => `<li class="${x.done ? "done" : i === ph.current ? "cur" : ""}"><span class="ic">${x.done ? "✓" : i === ph.current ? "▶" : "·"}</span><span>${esc(x.title)}</span></li>`).join("")}</ul>`;
+    }
+    // 에이전트
+    const ag = p.agents;
+    if (!ag.docker) $("pgAgents").innerHTML = '<span class="chip"><span class="dot bad"></span>Docker 꺼짐</span>';
+    else if (!ag.containers.length) $("pgAgents").innerHTML = '<span class="chip"><span class="dot"></span>실행 중인 에이전트 없음</span>';
+    else $("pgAgents").innerHTML = ag.containers.map((c) => c.roles.length
+      ? c.roles.map((r) => `<span class="chip"><span class="dot live"></span>${r.role} · ${r.tool} 작업 중</span>`).join("")
+      : `<span class="chip"><span class="dot wait"></span>컨테이너 실행 중 (${esc(c.since)})</span>`).join("");
+    // CI
+    if (!p.ci) $("pgCi").innerHTML = '<span class="muted">확인 불가 (원격 저장소 없음 또는 PC의 gh 미로그인)</span>';
+    else if (!p.ci.length) $("pgCi").innerHTML = '<span class="muted">실행 기록 없음</span>';
+    else $("pgCi").innerHTML = p.ci.slice(0, 3).map((r) => {
+      const st = r.status !== "completed" ? ["wait", r.status === "queued" ? "대기" : "실행 중"] : r.conclusion === "success" ? ["live", "성공"] : r.conclusion === "skipped" ? ["", "건너뜀"] : ["bad", "실패"];
+      return `<div class="feed"><li style="grid-template-columns:auto 1fr auto"><span class="chip" style="margin:0"><span class="dot ${st[0]}"${st[0] === "live" ? ' style="animation:none"' : ""}></span>${st[1]}</span><a class="x" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.displayTitle)}">${esc(r.displayTitle)}</a><span class="t">${ago(Date.parse(r.createdAt))}</span></li></div>`;
+    }).join("");
+    // 기록
+    $("pgTimeline").innerHTML = p.timeline.length ? p.timeline.map((e) => `<li><span>${ICON[e.type] || "•"}</span><span class="x">${e.path ? `<a class="linkish" data-open="${esc(e.path)}">${esc(e.title)}</a>` : `${esc(e.title)} <span class="muted">${esc(e.sha || "")}</span>`}</span><span class="t">${ago(e.time)}</span></li>`).join("") : '<li class="muted">기록 없음</li>';
+    $("pgFiles").innerHTML = p.recent.length ? p.recent.map((f) => `<li><span>·</span><span class="x" title="${esc(f.path)}">${/\.md$/i.test(f.path) ? `<a class="linkish" data-open="${esc(f.path)}">${esc(f.path)}</a>` : esc(f.path)}</span><span class="t">${ago(f.mtime)}</span></li>`).join("") : '<li class="muted">없음</li>';
+    document.querySelectorAll("[data-open]").forEach((a) => a.onclick = () => { document.getElementById("docView").scrollIntoView({ behavior: "smooth", block: "start" }); openDoc(a.dataset.open); });
+    $("pgAt").textContent = `마지막 갱신: ${new Date(p.at).toLocaleTimeString()}`;
+    // 문서 목록이 바뀌었으면(새 보고서/리뷰 등) 문서 영역도 갱신 — 편집 중이면 건드리지 않음
+    const sig = p.timeline.filter((e) => e.path).map((e) => e.path + e.time).join();
+    if (lastDocSig && sig !== lastDocSig && !dirty && mode === "view") loadDocs();
+    lastDocSig = sig;
+  } catch (e) { $("pgAt").textContent = "진행 상황 오류: " + e.message; }
+  pgBusy = false;
+}
+$("pgRefresh").onclick = loadProgress;
+setInterval(() => { if ($("autoRefresh").checked && !document.hidden) loadProgress(); }, 10000);
 
 // ---------- 시작 ----------
 (async () => {

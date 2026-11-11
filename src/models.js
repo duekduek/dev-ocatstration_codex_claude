@@ -2,6 +2,7 @@
 // Codex: `codex debug models`로 실제 카탈로그를 가져오고, 실패하면 기본 목록 사용
 const { spawnSync } = require("child_process");
 
+const CLAUDE_LEVELS = ["low", "medium", "high", "xhigh", "max"]; // claude --effort
 const CLAUDE_MODELS = [
   { id: "sonnet", label: "Sonnet (최신, 권장 - 속도/사용량 균형)" },
   { id: "opus", label: "Opus (최신, 고품질 - 사용량 많음)" },
@@ -82,7 +83,7 @@ function verifyModel(dir, tool, model) {
 
 // 도구별 모델 목록 (GUI/CLI 공통 형식: {id, label, levels?, defaultLevel?})
 function modelsFor(tool, dir, opts) {
-  if (tool === "claude") return { source: "builtin", models: CLAUDE_MODELS };
+  if (tool === "claude") return { source: "builtin", models: CLAUDE_MODELS.map((m) => ({ ...m, levels: CLAUDE_LEVELS, defaultLevel: "high" })) };
   return codexModels(dir, opts);
 }
 

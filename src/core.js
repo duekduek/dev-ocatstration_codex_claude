@@ -201,6 +201,7 @@ function plannerArgs(cfg, prompt) {
   if (p.tool === "claude") {
     a = ["claude", "--permission-mode", "bypassPermissions"];
     if (p.model) a.push("--model", p.model);
+    if (p.reasoning) a.push("--effort", p.reasoning);
   } else {
     a = ["codex", "--dangerously-bypass-approvals-and-sandbox"];
     if (p.model) a.push("-m", p.model);
