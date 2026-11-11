@@ -124,21 +124,53 @@ ${ci ? `   - push 후 GitHub Actions 빌드 결과를 확인한다 (\`gh run wat
 1. **분석**: 요구사항 명세를 분석한다. 모호한 점은 시작 전에 사용자에게 질문한다.
 2. **계획**: \`docs/PLAN.md\`를 작성한다.
    - 기술 스택, 폴더 구조, 데이터 모델
-   - Phase 목록 (각 phase는 독립적으로 검증 가능한 단위, 체크박스 \`- [ ]\`), 각 phase의 완료 기준
-   - 작성 후 사용자에게 계획 승인을 받는다.
-3. **개발 요청**: 아직 안 끝난 첫 phase를 개발 담당에게 맡긴다.
+   - **Phase를 잘게 나눈다.** 기준:
+     - 요구사항 명세의 기능·화면·데이터 항목을 **빠짐없이** phase에 배정하고, PLAN.md에 "요구사항 항목 ↔ phase" 대응표를 넣는다.
+     - 한 phase = 화면 하나 또는 기능 하나(+그 테스트). 개발 담당이 **한 번 호출로 끝낼 수 있는 크기**(변경 파일 대략 10개 이내)로 정한다.
+     - 큰 기능은 "데이터 모델 → 로직 → 화면 → 연동"처럼 여러 phase로 쪼갠다. 기반 작업(프로젝트 골격, 공통 컴포넌트)은 앞쪽에 둔다.
+     - 각 phase에 목표 한 줄, 세부 작업 목록, 완료 기준을 적는다. phase 목록은 \`- [ ] Phase N: 제목\` 체크박스 형식.
+   - 작성 후 사용자에게 계획 승인을 받는다. 승인되면 \`docs/progress.json\`을 만든다 (아래 "진행 상태 기록").
+3. **개발 요청**: 아직 안 끝난 첫 phase를 개발 담당에게 맡긴다. 호출 전에 progress.json에서 그 phase를 \`in_progress\`로 바꾸고 startedAt을 기록한다.
    \`\`\`bash
    ${devCmd(cfg, `${DEV_PREFIX} docs/PLAN.md의 Phase N을 구현해. 완료 기준을 모두 충족시키고, 끝나면 docs/reports/phase-N.md에 구현 내용·변경 파일·실행/테스트 방법을 요약해.`)}
    \`\`\`
-4. **검토**: 보고서와 실제 코드를 확인한다.${p.localCheck ? ` 직접 검증도 실행한다: \`${p.localCheck}\`` : ""}
+4. **검토**: 개발 담당이 끝나면 progress.json의 status를 \`review\`로 바꾸고, 끝난 세부 작업(tasks)은 done=true로 표시한 뒤 보고서와 실제 코드를 확인한다.${p.localCheck ? ` 직접 검증도 실행한다: \`${p.localCheck}\`` : ""}
    - 기준: 완료 기준 충족, 버그, 보안, 계획과의 일치
    - 문제가 있으면 \`docs/reviews/phase-N.md\`에 지적 사항을 쓰고 수정 요청:
      \`\`\`bash
      ${devCmd(cfg, `${DEV_PREFIX} docs/reviews/phase-N.md의 리뷰 지적 사항을 반영해 수정하고 docs/reports/phase-N.md를 갱신해.`)}
      \`\`\`
-   - 통과할 때까지 3~4단계를 반복한다.
+   - 수정을 요청할 때는 status를 \`fix\`로 바꾸고 review 경로를 기록한다. 통과할 때까지 3~4단계를 반복한다.
 ${step5}
+   - 완료되면 progress.json의 해당 phase를 \`done\`으로 바꾸고 doneAt, commit(짧은 SHA), report 경로를 기록한다.
 6. 다음 phase로 넘어간다. 모든 phase가 끝나면 최종 요약을 사용자에게 보고한다.
+
+## 진행 상태 기록 (docs/progress.json)
+
+사용자는 웹 화면에서 이 파일로 진행 상황을 본다. **상태가 바뀔 때마다 즉시** 갱신한다 (올바른 JSON 유지, 시간은 ISO 8601).
+\`\`\`json
+{
+  "updatedAt": "2026-01-01T09:00:00Z",
+  "current": 3,
+  "phases": [
+    {
+      "id": 1,
+      "title": "프로젝트 골격",
+      "goal": "한 줄 목표",
+      "requirements": ["명세 2.1 지도 표시"],
+      "tasks": [{ "title": "세부 작업", "done": false }],
+      "criteria": ["완료 기준"],
+      "status": "todo",
+      "startedAt": null, "doneAt": null,
+      "commit": null, "report": null, "review": null,
+      "note": ""
+    }
+  ]
+}
+\`\`\`
+- status: \`todo\`(대기) → \`in_progress\`(개발 중) → \`review\`(검토 중) → \`fix\`(수정 요청) → \`done\`(완료). 막히면 \`blocked\` + note에 이유.
+- current: 지금 진행 중인 phase id. phase 구성이 바뀌면 PLAN.md와 progress.json을 함께 고친다.
+- 멈출 때(사용 한도 등)도 note에 상황을 남긴다.
 
 ## 규칙
 

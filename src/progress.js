@@ -10,17 +10,42 @@ const sh = (cmd, args, cwd, timeout = 15000) => {
   } catch { return null; }
 };
 
-// PLAN.md에서 phase 체크박스 추출
+// 기획 담당이 기록하는 docs/progress.json (상태·세부 작업 포함) → 없거나 깨졌으면 PLAN.md 체크박스
+const STATUSES = ["todo", "in_progress", "review", "fix", "done", "blocked"];
 function phases(dir) {
+  const pj = path.join(dir, "docs", "progress.json");
+  if (fs.existsSync(pj)) {
+    try {
+      const j = JSON.parse(fs.readFileSync(pj, "utf8"));
+      const items = (j.phases || []).map((p, i) => ({
+        id: p.id ?? i + 1,
+        title: String(p.title || `Phase ${i + 1}`),
+        goal: p.goal || "",
+        status: STATUSES.includes(p.status) ? p.status : "todo",
+        done: p.status === "done",
+        tasks: Array.isArray(p.tasks) ? p.tasks.map((t) => (typeof t === "string" ? { title: t, done: false } : { title: String(t.title || ""), done: !!t.done })) : [],
+        requirements: Array.isArray(p.requirements) ? p.requirements.map(String) : [],
+        startedAt: p.startedAt || null, doneAt: p.doneAt || null,
+        commit: p.commit || null, report: p.report || null, review: p.review || null, note: p.note || "",
+      }));
+      let current = items.findIndex((x) => x.id === j.current && !x.done);
+      if (current < 0) current = items.findIndex((x) => ["in_progress", "review", "fix", "blocked"].includes(x.status));
+      if (current < 0) current = items.findIndex((x) => !x.done);
+      return { exists: true, source: "progress.json", items, done: items.filter((x) => x.done).length, current, updated: fs.statSync(pj).mtimeMs };
+    } catch (e) {
+      // 기록 도중 읽으면 JSON이 잠깐 깨질 수 있음 → PLAN.md로 대체
+    }
+  }
   const f = path.join(dir, "docs", "PLAN.md");
   if (!fs.existsSync(f)) return { exists: false, items: [] };
   const items = [];
   for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
     const m = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (m) items.push({ done: m[1] !== " ", title: m[2].replace(/\*\*/g, "").trim() });
+    if (m) items.push({ done: m[1] !== " ", status: m[1] !== " " ? "done" : "todo", tasks: [], title: m[2].replace(/\*\*/g, "").trim() });
   }
   const current = items.findIndex((x) => !x.done);
-  return { exists: true, items, done: items.filter((x) => x.done).length, current, updated: fs.statSync(f).mtimeMs };
+  if (current >= 0) items[current].status = "in_progress";
+  return { exists: true, source: "PLAN.md", items, done: items.filter((x) => x.done).length, current, updated: fs.statSync(f).mtimeMs };
 }
 
 // 이 프로젝트의 컨테이너와 그 안에서 돌고 있는 codex/claude 프로세스
