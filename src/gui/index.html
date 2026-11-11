@@ -779,11 +779,11 @@ $("autoContinue").onchange = () => saveToggles().catch((e) => log(e.message));
 // ---------- 사용량 ----------
 const resetIn = (t) => { if (!t) return ""; const m = Math.max(0, Math.round((t - Date.now()) / 60000)); return m < 60 ? `${m}분 후 초기화` : m < 1440 ? `${Math.floor(m / 60)}시간 ${m % 60}분 후 초기화` : `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간 후 초기화`; };
 const clock = (t) => t ? new Date(t).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-function meterHtml(name, w, msg) {
+function meterHtml(name, w, msg, at) {
   if (!w) return `<div class="meter" title="아직 사용 기록이 없습니다. 한 번 실행하면 표시됩니다"><div class="lbl"><span>${name}</span><b class="muted">기록 없음</b></div><div class="bar"><span style="width:0"></span></div><div class="lbl" style="font-size:11px"><span>&nbsp;</span></div></div>`;
   const left = Math.max(0, 100 - w.used);
   const tip = [w.resetsAt ? `초기화: ${clock(w.resetsAt)}` : "", msg || "", w.stale ? "초기화 시각이 지났습니다 (다음 실행 때 실제 값으로 갱신)" : ""].filter(Boolean).join(" · ");
-  return `<div class="meter ${left <= 0 ? "low out" : left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(tip)}"><div class="lbl"><span>${name}</span><b>${left <= 0 ? "소진" : left + "% 남음"}</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${left <= 0 && w.resetsAt ? clock(w.resetsAt) + " 초기화" : esc(resetIn(w.resetsAt))}</span></div></div>`;
+  return `<div class="meter ${left <= 0 ? "low out" : left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(tip)}"><div class="lbl"><span>${name}</span><b>${left <= 0 ? "소진" : left + "% 남음"}</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${left <= 0 && w.resetsAt ? clock(w.resetsAt) + " 초기화" : esc(resetIn(w.resetsAt))}</span>${at ? `<span class="${Date.now() - at > 15 * 60000 ? "bad" : ""}">${ago(at)} 기준</span>` : ""}</div></div>`;
 }
 let usageNow = null;
 async function loadUsage(force) {
@@ -791,7 +791,7 @@ async function loadUsage(force) {
   try {
     const u = usageNow = await api("/api/usage?dir=" + encodeURIComponent(dir()) + (force ? "&force=1" : ""));
     const cm = u.codex?.exhausted ? u.codex.message : "";
-    $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five, cm) + meterHtml("Codex 주간", u.codex?.week, cm) + meterHtml("Claude 5시간", u.claude?.five) + meterHtml("Claude 주간", u.claude?.week);
+    $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five, cm, u.codex?.at) + meterHtml("Codex 주간", u.codex?.week, cm, u.codex?.at) + meterHtml("Claude 5시간", u.claude?.five, "", u.claude?.at) + meterHtml("Claude 주간", u.claude?.week, "", u.claude?.at);
     // 기획/개발 담당 도구가 소진되면 실시간 패널에 경고
     const out = (t) => { const x = u[t]; if (!x) return null; const w = ["five", "week"].find((k) => x[k] && x[k].used >= 100 && !x[k].stale); return w ? x[w] : null; };
     const warn = [];

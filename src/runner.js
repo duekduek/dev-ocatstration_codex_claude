@@ -277,9 +277,27 @@ function codexUsage(dir, force) {
   codexUsageCache = { at: Date.now(), dir, data };
   return data;
 }
+// Claude 현재 사용량 측정: 아주 짧은 호출(haiku)의 rate_limit_event로 받는다. 너무 자주 하지 않도록 2분 간격 제한
+let lastProbe = 0;
+function claudeProbe(dir) {
+  if (Date.now() - lastProbe < 120000) return false;
+  lastProbe = Date.now();
+  const st = state(dir);
+  try {
+    require("./core").ensureVolumes();
+    const r = spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "claude", "-p", ".", "--model", "haiku", "--max-turns", "1", "--output-format", "stream-json", "--verbose"],
+      { cwd: dir, encoding: "utf8", timeout: 90000, stdio: ["ignore", "pipe", "pipe"] });
+    for (const l of (r.stdout || "").split("\n")) if (l.includes('"rate_limit_event"')) feed(st, "probe", "claude", l);
+    return true;
+  } catch { return false; }
+}
+
 function usage(dir, force) {
   const st = state(dir);
   pollDev(st);
+  // 강제 새로고침이거나 Claude 값이 20분 넘게 오래됐으면 지금 값을 측정
+  const g0 = readJson(GLOBAL_USAGE, {});
+  if (fs.existsSync(path.join(dir, "docker-compose.yml")) && (force || !g0.claude || Date.now() - g0.claude.at > 20 * 60000)) claudeProbe(dir);
   // 개발 담당 로그에서 Claude 사용량 갱신 (rate_limit_event)
   const g = readJson(GLOBAL_USAGE, {});
   const cl = [st.usage.claude, g.claude].filter(Boolean).sort((a, b) => b.at - a.at)[0];
