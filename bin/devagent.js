@@ -12,7 +12,7 @@ const HELP = `devagent - Codex(기획/리뷰) + Claude(개발) 멀티 에이전�
   apply              devagent.config.json 기준으로 생성 파일 다시 만들기
   set <키> <값>      설정 변경 후 apply (예: set developer.model opus)
   models             선택 가능한 모델/플랫폼 보기
-  login              Docker 이미지 빌드 + Claude/Codex/GitHub 로그인
+  login [--no-import] Docker 이미지 빌드 + 로그인 (PC에 로그인돼 있으면 그대로 가져옴)
   repo               GitHub 저장소 생성(기본 private) + 첫 커밋/푸시
   start [프롬프트]    컨테이너 안에서 Codex 실행 (기본: 개발 시작/이어하기)
   shell              컨테이너 셸 열기
@@ -37,7 +37,7 @@ function parse(argv) {
     const a = argv[i];
     if (a.startsWith("--")) {
       const k = a.slice(2);
-      if (["yes", "no-build-check", "help", "json"].includes(k)) o[k] = true;
+      if (["yes", "no-build-check", "help", "json", "no-import"].includes(k)) o[k] = true;
       else o[k] = argv[++i];
     } else pos.push(a);
   }
@@ -117,7 +117,7 @@ async function main() {
       for (const [k, p] of Object.entries(core.PLATFORMS)) console.log(`  ${k.padEnd(13)} ${p.label}`);
       return;
     }
-    case "login": core.login(dir); return;
+    case "login": core.login(dir, console.log, { importHost: !o["no-import"] }); return;
     case "repo": core.repo(dir); return;
     case "start": process.exitCode = core.start(dir, { prompt: pos[1] }); return;
     case "shell": process.exitCode = core.start(dir, { shell: true }); return;

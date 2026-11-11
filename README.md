@@ -11,9 +11,33 @@
 - Node 18 이상, git, Docker Desktop
 - 설치 상태는 `devagent doctor`로 점검할 수 있습니다.
 
-## 처음 시작하기 (가장 쉬운 방법)
+## 처음 시작하기 — Claude Code에 이렇게 말하세요
 
-Claude Code만 있으면 됩니다. 아래 두 줄로 플러그인을 설치한 뒤 `/devagent`를 실행하세요.
+Claude Code에서 개발할 폴더를 열고, 아래 문장을 그대로 붙여넣으면 됩니다.
+
+> github.com/duekduek/dev-ocatstration_codex_claude 를 설치해서 이 폴더에 Codex랑 Claude로 개발 환경 만들어줘. 설치 방법은 그 저장소 README를 따라줘.
+
+Claude가 다음을 순서대로 진행합니다.
+1. devagent를 설치하고 스킬을 등록합니다.
+2. Node, git, Docker를 점검합니다. 없는 도구는 설치해도 되는지 묻고 설치합니다.
+3. 플랫폼, 역할별 도구, 모델을 정합니다.
+4. 로그인, 저장소 생성, 개발 시작까지 이어서 진행합니다.
+
+설치한 다음부터는 `/devagent`를 입력하지 않아도 이렇게 말하면 됩니다.
+- "Codex랑 Claude로 개발 환경 만들어줘" / "이 폴더에서 멀티 에이전트 개발 시작해"
+- "개발 담당을 Codex로 바꾸고 모델은 gpt-6.1-sol로 해줘"
+- "요구사항 문서 같이 써줘" / "어디까지 진행됐어?"
+
+> **Claude에게 (이 README를 읽고 설치를 맡은 경우):** 아래 순서로 진행하세요.
+> 1. 저장소를 `~/.devagent/app`에 clone합니다. Windows에서는 `%USERPROFILE%\.devagent\app`입니다.
+> 2. `node ~/.devagent/app/bin/devagent.js install-skill`로 스킬을 설치합니다.
+> 3. 설치된 스킬 파일 `~/.claude/skills/devagent/SKILL.md`를 읽고 그 절차대로 진행합니다.
+>
+> 시스템에 도구를 설치하는 작업과 로그인은 사용자 확인을 받은 뒤에만 합니다.
+
+### 플러그인으로 설치
+
+`/plugin`은 사용자가 직접 입력하는 명령입니다. 아래 두 줄을 입력한 뒤 `/devagent`를 실행하세요.
 ```
 /plugin marketplace add duekduek/dev-ocatstration_codex_claude
 /plugin install devagent@devagent-marketplace
@@ -54,6 +78,20 @@ devagent set planner.reasoning xhigh
 devagent set planner.tool claude       # 기획도 Claude로
 devagent set developer.tool codex      # 개발을 Codex로
 ```
+
+## 로그인
+
+`devagent login`은 **PC에 이미 로그인된 계정을 가져올 수 있으면 가져옵니다.** 가져오지 못한 계정만 직접 로그인하면 됩니다. 로그인 정보는 `devagent-*` Docker 볼륨에 저장되어 모든 프로젝트가 같이 씁니다.
+
+| 계정 | PC에서 가져오기 | 가져오지 못하면 |
+|---|---|---|
+| Codex | O (`~/.codex/auth.json`이 있을 때) | 기기 코드 로그인. ChatGPT 보안 설정에서 기기 코드 로그인을 허용해야 합니다. 또는 PC에서 `codex login`을 먼저 하세요. |
+| GitHub | O (PC의 `gh`가 로그인되어 있을 때. 토큰은 화면에 출력하지 않고 전달합니다) | github.com/login/device 에서 코드 입력 |
+| Claude | **X** | 컨테이너에서 링크를 열어 로그인하고 코드를 붙여넣습니다 |
+
+Claude를 가져오지 않는 이유: Claude 로그인 토큰은 사용처마다 갱신(회전)됩니다. 그래서 복사본은 곧 만료되고 갱신도 되지 않습니다. 직접 로그인은 PC마다 한 번만 하면 됩니다.
+
+가져오기를 끄려면 `devagent login --no-import`를 쓰세요.
 
 ## 플랫폼
 `web`, `react-native`, `python`, `ios`, `android`, `flutter`, `go`, `java`, `rust`

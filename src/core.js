@@ -122,21 +122,50 @@ function loginStatus(dir) {
   return s;
 }
 
-// 대화형 로그인 (터미널 필요)
-function login(dir, log = console.log) {
+// PC에 이미 로그인된 정보를 컨테이너(공유 볼륨)로 가져온다. 값은 출력하지 않는다.
+const HOST_FILES = {
+  codex: { file: () => path.join(os.homedir(), ".codex", "auth.json"), dest: "~/.codex/auth.json" },
+  // Claude는 가져오지 않는다: 로그인 토큰이 사용처마다 갱신(회전)돼서 복사본은 곧 만료되고 갱신도 안 됨 → 컨테이너에서 직접 로그인
+};
+function hostLogins() {
+  const out = {};
+  for (const [k, v] of Object.entries(HOST_FILES)) out[k] = fs.existsSync(v.file());
+  try { out.gh = run("gh", ["auth", "token"]).code === 0; } catch { out.gh = false; }
+  return out;
+}
+function importLogin(dir, tool, log) {
+  if (HOST_FILES[tool]) {
+    const src = HOST_FILES[tool].file();
+    if (!fs.existsSync(src)) return false;
+    const r = inContainer(dir, `cp /tmp/host-login ${HOST_FILES[tool].dest} && chmod 600 ${HOST_FILES[tool].dest}`, { extra: ["-v", `${src}:/tmp/host-login:ro`] });
+    log(r.code === 0 ? `PC의 ${tool} 로그인 정보를 가져왔습니다.` : `${tool} 로그인 정보 가져오기 실패`);
+    return r.code === 0;
+  }
+  if (tool === "gh") {
+    let token;
+    try { const t = run("gh", ["auth", "token"]); if (t.code === 0) token = t.out; } catch {}
+    if (!token) return false;
+    // 토큰은 표준입력으로만 전달 (명령줄/로그에 남기지 않음)
+    const r = dc(dir, ["run", "--rm", "-T", "dev", "gh", "auth", "login", "-h", "github.com", "--with-token"], { input: token + "\n" });
+    log(r.code === 0 ? "PC의 GitHub 로그인을 가져왔습니다." : "GitHub 로그인 가져오기 실패");
+    return r.code === 0;
+  }
+  return false;
+}
+
+// 로그인: PC 로그인 가져오기 → 그래도 없으면 대화형 로그인 (터미널 필요)
+function login(dir, log = console.log, { importHost = true } = {}) {
   build(dir, log);
-  const s = loginStatus(dir);
+  let s = loginStatus(dir);
   log(`현재 로그인: Claude ${s.claude ? "O" : "X"} / Codex ${s.codex ? "O" : "X"} / GitHub ${s.gh ? "O" : "X"}`);
 
+  if (importHost && (!s.claude || !s.codex || !s.gh)) {
+    for (const t of ["claude", "codex", "gh"]) if (!s[t]) importLogin(dir, t, log);
+    s = loginStatus(dir);
+  }
   if (!s.codex) {
-    const hostAuth = path.join(os.homedir(), ".codex", "auth.json");
-    if (fs.existsSync(hostAuth)) {
-      log("PC의 Codex 로그인 정보를 컨테이너로 복사합니다.");
-      inContainer(dir, "cp /tmp/host-codex-auth.json ~/.codex/auth.json && chmod 600 ~/.codex/auth.json", { extra: ["-v", `${hostAuth}:/tmp/host-codex-auth.json:ro`] });
-    } else {
-      log("Codex 로그인: 브라우저에서 링크를 열고 코드를 입력하세요. (ChatGPT 보안 설정에서 기기 코드 로그인 허용 필요)");
-      inContainer(dir, "codex login --device-auth", { inherit: true });
-    }
+    log("Codex 로그인: 브라우저에서 링크를 열고 코드를 입력하세요. (ChatGPT 보안 설정에서 기기 코드 로그인 허용 필요 — 또는 PC에서 먼저 'codex login' 후 다시 실행)");
+    inContainer(dir, "codex login --device-auth", { inherit: true });
   }
   if (!s.claude) { log("Claude 로그인: 링크를 열어 로그인한 뒤 코드를 붙여넣으세요."); inContainer(dir, "claude auth login", { inherit: true }); }
   if (!s.gh) { log("GitHub 로그인: 코드를 github.com/login/device 에 입력하세요."); inContainer(dir, "gh auth login -h github.com -p https -w", { inherit: true }); }
@@ -222,5 +251,6 @@ function openTerminal(dir, args) {
 module.exports = {
   CONFIG_FILE, MODEL_HINTS, PLATFORMS, DEFAULT_CONFIG, TOOLS,
   startScriptFor: (cfg, p) => startScript(cfg, p === undefined ? DEFAULT_PROMPT(cfg) : p),
+  hostLogins, importLogin,
   loadConfig, saveConfig, setKey, validate, init, apply, build, login, loginStatus, repo, start, status, openTerminal, dockerOk, DEFAULT_PROMPT,
 };

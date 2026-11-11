@@ -1,6 +1,6 @@
 ---
 name: devagent
-description: devagent(Codex 기획/리뷰 + Claude 개발, Docker 격리, phase별 GitHub push) 프로젝트를 설정·실행하도록 돕는다. 사용자가 "devagent", "codex랑 claude로 개발 환경 만들어줘", "멀티 에이전트 개발 시작", "도커에서 codex/claude 돌리기"를 말하거나 /devagent 를 부를 때 사용. 환경 점검, Docker 등 누락 도구 설치 안내, 플랫폼별(iOS/Android 등) 실행 가능 범위 안내, init/login/repo/start 진행을 담당한다.
+description: devagent(기획/리뷰 담당 + 개발 담당 AI, 기본 Codex+Claude, Docker 격리, phase별 GitHub push) 프로젝트를 설정·실행하도록 돕는다. 사용자가 "devagent", "codex랑 claude로 개발 환경 만들어줘", "멀티 에이전트 개발 시작", "도커에서 codex/claude 돌리기", "개발 담당/기획 담당 바꿔줘", "모델 바꿔줘", "요구사항 문서 같이 써줘", "어디까지 진행됐어"를 말하거나 /devagent 를 부를 때 사용. 환경 점검, Docker 등 누락 도구 설치 안내, 플랫폼별(iOS/Android 등) 실행 가능 범위 안내, init/login/repo/start 진행을 담당한다.
 ---
 
 # devagent 실행 도우미
@@ -86,7 +86,8 @@ devagent login --dir <폴더>
 ```
 
 - Docker 이미지 빌드 → 이미 로그인된 항목은 건너뜀. 로그인 정보는 모든 devagent 프로젝트가 공유(Docker 볼륨 devagent-*)하므로 한 번만 하면 된다.
-- Codex: 호스트에 `~/.codex/auth.json`이 있으면 자동 복사. 없으면 기기 코드 로그인 — "기기 코드 로그인을 활성화하라"는 메시지가 나오면 ChatGPT 보안 설정에서 허용하거나, 호스트에서 먼저 `codex login`을 하고 다시 `devagent login`을 실행하라고 안내.
+- PC에 로그인된 Codex(`~/.codex/auth.json`)와 GitHub(`gh auth token`)는 자동으로 가져온다. Claude는 토큰이 사용처마다 갱신되어 복사가 안 되므로 컨테이너에서 직접 로그인한다.
+- Codex를 못 가져오면 기기 코드 로그인 — "기기 코드 로그인을 활성화하라"는 메시지가 나오면 ChatGPT 보안 설정에서 허용하거나, 호스트에서 먼저 `codex login`을 하고 다시 `devagent login`을 실행하라고 안내.
 - Claude: 링크를 열어 로그인 → 받은 코드를 터미널에 붙여넣기.
 - GitHub: 일회용 코드를 github.com/login/device 에 입력.
 - 끝나면 `devagent status --dir <폴더>`로 세 항목 모두 O인지 확인.
