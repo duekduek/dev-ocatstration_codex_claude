@@ -38,9 +38,11 @@ function push(st, ev) {
   if (["command", "file", "reading", "subagent"].includes(ev.kind)) st.current = { src: ev.src, kind: ev.kind, text: ev.text, path: ev.path, ts: ev.ts };
 }
 
+// 사용량은 계정 단위라 모든 프로젝트가 공유하도록 ~/.devagent/usage.json 에 저장
+const GLOBAL_USAGE = path.join(require("os").homedir(), ".devagent", "usage.json");
 function saveUsage(st, tool, five, week) {
   st.usage[tool] = { five, week, at: Date.now() };
-  try { fs.writeFileSync(path.join(devDir(st.dir), "usage.json"), JSON.stringify(st.usage)); } catch {}
+  try { fs.mkdirSync(path.dirname(GLOBAL_USAGE), { recursive: true }); const g = readJson(GLOBAL_USAGE, {}); g[tool] = st.usage[tool]; fs.writeFileSync(GLOBAL_USAGE, JSON.stringify(g)); } catch {}
 }
 
 // ---------- 이벤트 정규화 ----------
@@ -216,24 +218,74 @@ function reset(dir) {
 
 // ---------- 사용량 ----------
 let codexUsageCache = { at: 0 };
-function codexUsage(dir) {
-  if (Date.now() - codexUsageCache.at < 60000 && codexUsageCache.dir === dir) return codexUsageCache.data;
-  require("./core").ensureVolumes();
-  const r = spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "bash", "-lc",
-    'f=$(ls -t $(find ~/.codex/sessions -name "rollout-*.jsonl" 2>/dev/null) 2>/dev/null | head -1); [ -n "$f" ] && grep -o "\\"rate_limits\\":{.*" "$f" | tail -1'], { cwd: dir, encoding: "utf8", timeout: 60000 });
+// Codex 사용량: 세션 기록(rollout-*.jsonl)의 token_count.rate_limits(limit_id "codex") 중 가장 최신 값
+// + 그 뒤에 "usage_limit_exceeded" 오류가 있으면 소진으로 표시. 컨테이너와 PC 기록을 모두 본다(같은 계정).
+const LIMIT_RE = /"rate_limits"|usage_limit_exceeded/;
+function scanCodexLines(lines, acc) {
+  for (const l of lines) {
+    if (!LIMIT_RE.test(l)) continue;
+    let j; try { j = JSON.parse(l); } catch { continue; }
+    const ts = Date.parse(j.timestamp) || 0, p = j.payload || {};
+    const rl = p.rate_limits || p.info?.rate_limits;
+    if (p.type === "token_count" && rl && rl.limit_id === "codex" && rl.primary) {
+      if (ts > acc.ts) Object.assign(acc, { ts, primary: rl.primary, secondary: rl.secondary });
+    }
+    const err = p.error || (p.type === "error" ? p : null);
+    if (err && /usage_limit_exceeded|usage limit/i.test(JSON.stringify(err)) && ts > acc.limitTs) {
+      acc.limitTs = ts; acc.limitMsg = String(err.message || "").slice(0, 200);
+    }
+  }
+}
+function hostRolloutFiles(n = 6) {
+  const root = path.join(require("os").homedir(), ".codex", "sessions");
+  const out = [];
+  (function walk(d, depth) {
+    let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    // 날짜 폴더(YYYY/MM/DD)는 최신 것부터 2개씩만
+    const dirs = ents.filter((e) => e.isDirectory()).map((e) => e.name).sort().reverse().slice(0, depth < 2 ? 2 : 3);
+    for (const e of ents) if (e.isFile() && /^rollout-.*\.jsonl$/.test(e.name)) { const f = path.join(d, e.name); out.push({ f, m: fs.statSync(f).mtimeMs }); }
+    for (const x of dirs) walk(path.join(d, x), depth + 1);
+  })(root, 0);
+  return out.sort((a, b) => b.m - a.m).slice(0, n).map((x) => x.f);
+}
+function codexUsage(dir, force) {
+  if (!force && Date.now() - codexUsageCache.at < 45000 && codexUsageCache.dir === dir) return codexUsageCache.data;
+  const acc = { ts: 0, limitTs: 0 };
+  // 1) 컨테이너(개발에 쓰는 계정) 기록
+  try {
+    require("./core").ensureVolumes();
+    const r = spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "bash", "-lc",
+      'fs=$(ls -t $(find ~/.codex/sessions -name "rollout-*.jsonl" 2>/dev/null) 2>/dev/null | head -6); [ -n "$fs" ] && grep -h -E "\\"rate_limits\\"|usage_limit_exceeded" $fs'], { cwd: dir, encoding: "utf8", timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
+    scanCodexLines((r.stdout || "").split("\n"), acc);
+  } catch {}
+  // 2) PC의 Codex 기록
+  for (const f of hostRolloutFiles()) { try { scanCodexLines(fs.readFileSync(f, "utf8").split("\n"), acc); } catch {} }
   let data = null;
-  const m = (r.stdout || "").match(/"primary":(\{[^}]*\}).*?"secondary":(\{[^}]*\})/);
-  if (m) {
-    const conv = (s) => { try { const x = JSON.parse(s); return { used: Math.round(x.used_percent), resetsAt: x.resets_at ? x.resets_at * 1000 : null, windowMinutes: x.window_minutes }; } catch { return null; } };
-    data = { five: conv(m[1]), week: conv(m[2]), at: Date.now() };
+  if (acc.ts || acc.limitTs) {
+    const conv = (x) => x ? { used: Math.round(x.used_percent), resetsAt: x.resets_at ? x.resets_at * 1000 : null } : null;
+    data = { five: conv(acc.primary), week: conv(acc.secondary), at: Math.max(acc.ts, acc.limitTs) };
+    // 최신 기록 이후 한도 초과 오류 → 소진(초기화 시각이 아직 안 지났다면)
+    if (acc.limitTs > acc.ts) {
+      data.exhausted = true; data.message = acc.limitMsg;
+      const w = data.week && data.week.used >= 95 ? "week" : "five";
+      if (data[w] && (!data[w].resetsAt || data[w].resetsAt > Date.now())) data[w].used = 100;
+      else if (!data[w]) data[w] = { used: 100, resetsAt: null };
+    }
+    // 초기화 시각이 지난 창은 0%로 (다음 실행 때 실제 값으로 갱신)
+    for (const k of ["five", "week"]) if (data[k] && data[k].resetsAt && data[k].resetsAt < Date.now()) { data[k].used = 0; data[k].stale = true; }
   }
   codexUsageCache = { at: Date.now(), dir, data };
   return data;
 }
-function usage(dir) {
+function usage(dir, force) {
   const st = state(dir);
   pollDev(st);
-  return { codex: codexUsage(dir) || st.usage.codex || null, claude: st.usage.claude || null };
+  // 개발 담당 로그에서 Claude 사용량 갱신 (rate_limit_event)
+  const g = readJson(GLOBAL_USAGE, {});
+  const cl = [st.usage.claude, g.claude].filter(Boolean).sort((a, b) => b.at - a.at)[0];
+  const c = cl ? { ...cl } : null;
+  if (c) for (const k of ["five", "week"]) if (c[k] && c[k].resetsAt && c[k].resetsAt < Date.now()) c[k] = { ...c[k], used: 0, stale: true };
+  return { codex: codexUsage(dir, force) || null, claude: c };
 }
 
 // ---------- 조회 ----------

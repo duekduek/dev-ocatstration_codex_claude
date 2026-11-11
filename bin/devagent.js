@@ -9,7 +9,7 @@ const HELP = `devagent - Codex(기획/리뷰) + Claude(개발) 멀티 에이전�
 사용법: devagent <명령> [옵션]
 
   init [폴더]        새 프로젝트 설정 (대화형, 또는 옵션으로 지정)
-  apply              devagent.config.json 기준으로 생성 파일 다시 만들기
+  apply [--force]    생성 파일 다시 만들기 (수정된 파일은 건너뜀, --force면 덮어씀)
   set <키> <값>      설정 변경 후 apply (예: set developer.model opus)
   models             선택 가능한 모델/플랫폼 보기
   login [--no-import] Docker 이미지 빌드 + 로그인 (PC에 로그인돼 있으면 그대로 가져옴)
@@ -37,7 +37,7 @@ function parse(argv) {
     const a = argv[i];
     if (a.startsWith("--")) {
       const k = a.slice(2);
-      if (["yes", "no-build-check", "help", "json", "no-import"].includes(k)) o[k] = true;
+      if (["yes", "no-build-check", "help", "json", "no-import", "force"].includes(k)) o[k] = true;
       else o[k] = argv[++i];
     } else pos.push(a);
   }
@@ -99,11 +99,11 @@ async function main() {
 
   switch (cmd) {
     case "init": return initCmd(dir, o);
-    case "apply": { const cfg = core.loadConfig(dir); if (!cfg) throw new Error("devagent.config.json 없음 - init 먼저"); return core.apply(dir, cfg); }
+    case "apply": { const cfg = core.loadConfig(dir); if (!cfg) throw new Error("devagent.config.json 없음 - init 먼저"); return core.apply(dir, cfg, console.log, { force: !!o.force }); }
     case "set": {
       if (pos.length < 3) throw new Error("사용법: devagent set <키> <값>");
       const cfg = core.loadConfig(dir); if (!cfg) throw new Error("devagent.config.json 없음 - init 먼저");
-      core.apply(dir, core.setKey(cfg, pos[1], pos[2]));
+      core.apply(dir, core.setKey(cfg, pos[1], pos[2]), console.log, { force: !!o.force });
       return console.log(`${pos[1]} = ${pos[2]} 적용됨`);
     }
     case "models": {

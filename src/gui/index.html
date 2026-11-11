@@ -37,6 +37,9 @@
   .meter .bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; margin-top: 3px; }
   .meter .bar span { display: block; height: 100%; background: var(--ok); }
   .meter.mid .bar span { background: #f59f00; } .meter.low .bar span { background: var(--bad); }
+  .meter.out .lbl b { color: var(--bad); }
+  .usage { cursor: pointer; }
+  .limit-warn { background: var(--bad-soft); color: var(--bad); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
   .tabs { max-width: 1280px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; }
   .tabs button { border: 0; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; font-size: 14px; font-weight: 600; color: var(--muted); }
   .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
@@ -204,7 +207,7 @@
       <input id="dir" placeholder="프로젝트 폴더 (예: C:\Users\...\my-app)" aria-label="프로젝트 폴더">
       <button class="small" id="load">불러오기</button>
     </div>
-    <div class="usage" id="usage" title="남은 사용량 (로그인된 계정 기준)"></div>
+    <div class="usage" id="usage" title="남은 사용량 (로그인된 계정 기준) · 클릭하면 새로고침"></div>
   </div>
   <nav class="tabs" role="tablist">
     <button data-tab="run" class="on">진행</button>
@@ -233,6 +236,7 @@
             <button class="small" id="btnReset" title="기획 담당과의 대화를 새로 시작 (진행 파일은 유지)">새 대화</button>
           </span>
         </div>
+        <div class="limit-warn" id="limitWarn" hidden></div>
         <div class="now" id="now"><span class="who">지금</span><span class="what muted">작업 없음</span></div>
         <div class="feed" id="feed"></div>
         <div class="feed-tools">
@@ -774,18 +778,31 @@ $("autoContinue").onchange = () => saveToggles().catch((e) => log(e.message));
 
 // ---------- 사용량 ----------
 const resetIn = (t) => { if (!t) return ""; const m = Math.max(0, Math.round((t - Date.now()) / 60000)); return m < 60 ? `${m}분 후 초기화` : m < 1440 ? `${Math.floor(m / 60)}시간 ${m % 60}분 후 초기화` : `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간 후 초기화`; };
-function meterHtml(name, w) {
-  if (!w) return `<div class="meter"><div class="lbl"><span>${name}</span><b class="muted">정보 없음</b></div><div class="bar"><span style="width:0"></span></div></div>`;
+const clock = (t) => t ? new Date(t).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+function meterHtml(name, w, msg) {
+  if (!w) return `<div class="meter" title="아직 사용 기록이 없습니다. 한 번 실행하면 표시됩니다"><div class="lbl"><span>${name}</span><b class="muted">기록 없음</b></div><div class="bar"><span style="width:0"></span></div><div class="lbl" style="font-size:11px"><span>&nbsp;</span></div></div>`;
   const left = Math.max(0, 100 - w.used);
-  return `<div class="meter ${left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(resetIn(w.resetsAt))}"><div class="lbl"><span>${name}</span><b>${left}% 남음</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${esc(resetIn(w.resetsAt))}</span></div></div>`;
+  const tip = [w.resetsAt ? `초기화: ${clock(w.resetsAt)}` : "", msg || "", w.stale ? "초기화 시각이 지났습니다 (다음 실행 때 실제 값으로 갱신)" : ""].filter(Boolean).join(" · ");
+  return `<div class="meter ${left <= 0 ? "low out" : left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(tip)}"><div class="lbl"><span>${name}</span><b>${left <= 0 ? "소진" : left + "% 남음"}</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${left <= 0 && w.resetsAt ? clock(w.resetsAt) + " 초기화" : esc(resetIn(w.resetsAt))}</span></div></div>`;
 }
-async function loadUsage() {
+let usageNow = null;
+async function loadUsage(force) {
   if (!dir()) return;
   try {
-    const u = await api("/api/usage?dir=" + encodeURIComponent(dir()));
-    $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five) + meterHtml("Codex 주간", u.codex?.week) + meterHtml("Claude 5시간", u.claude?.five) + meterHtml("Claude 주간", u.claude?.week);
+    const u = usageNow = await api("/api/usage?dir=" + encodeURIComponent(dir()) + (force ? "&force=1" : ""));
+    const cm = u.codex?.exhausted ? u.codex.message : "";
+    $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five, cm) + meterHtml("Codex 주간", u.codex?.week, cm) + meterHtml("Claude 5시간", u.claude?.five) + meterHtml("Claude 주간", u.claude?.week);
+    // 기획/개발 담당 도구가 소진되면 실시간 패널에 경고
+    const out = (t) => { const x = u[t]; if (!x) return null; const w = ["five", "week"].find((k) => x[k] && x[k].used >= 100 && !x[k].stale); return w ? x[w] : null; };
+    const warn = [];
+    if (cfgCache) for (const [role, label] of [["planner", "기획"], ["developer", "개발"]]) {
+      const t = cfgCache[role].tool, o = out(t);
+      if (o) warn.push(`${label} 담당(${t === "codex" ? "Codex" : "Claude"}) 사용량 소진 — ${o.resetsAt ? clock(o.resetsAt) + "에 초기화" : "초기화 후 다시 시작하세요"}`);
+    }
+    $("limitWarn").hidden = !warn.length; $("limitWarn").textContent = "⚠ " + [...new Set(warn)].join(" / ") + " — 설정 탭에서 다른 도구로 바꿀 수도 있습니다.";
   } catch {}
 }
+$("usage").onclick = () => { $("usage").style.opacity = .5; loadUsage(true).finally(() => $("usage").style.opacity = 1); };
 setInterval(() => { if (!document.hidden) loadUsage(); }, 60000);
 
 // ---------- 시작 ----------

@@ -43,6 +43,17 @@ for (const [pt, dt] of [["claude", "codex"], ["claude", "claude"], ["codex", "co
   const start = core.startScriptFor(c);
   assert(start.startsWith(pt === "codex" ? "'codex'" : "'claude'"), `${pt}/${dt}: 시작 명령 불일치 ${start}`);
 }
+// 수정된 생성 파일은 apply가 덮어쓰지 않음 (--force면 덮어씀)
+{
+  const pf = path.join(d, "docs/agents/PLANNER.md");
+  fs.writeFileSync(pf, fs.readFileSync(pf, "utf8") + "\n- 프로젝트 전용 규칙\n");
+  core.apply(d, core.setKey(core.loadConfig(d), "developer.model", "haiku"), () => {});
+  assert(fs.readFileSync(pf, "utf8").includes("프로젝트 전용 규칙"), "수정된 PLANNER.md가 덮어써짐");
+  assert(fs.existsSync(path.join(d, ".devagent/proposed/docs/agents/PLANNER.md")), "새 버전 제안 파일 없음");
+  assert(fs.readFileSync(path.join(d, "docs/agents/DEVELOPER.md"), "utf8").length > 0);
+  core.apply(d, core.loadConfig(d), () => {}, { force: true });
+  assert(!fs.readFileSync(pf, "utf8").includes("프로젝트 전용 규칙"), "--force인데 덮어쓰지 않음");
+}
 // tool 없는 예전 설정도 기본값(codex/claude)으로 동작
 assert.strictEqual(core.loadConfig(d).planner.tool, "codex");
 

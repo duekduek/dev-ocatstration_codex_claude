@@ -48,9 +48,12 @@ function setKey(cfg, key, value) {
 }
 
 // ---------- 파일 생성 ----------
-function apply(dir, cfg, log = console.log) {
+const sha = (s) => require("crypto").createHash("sha256").update(String(s).replace(/\r\n/g, "\n")).digest("hex").slice(0, 16);
+function apply(dir, cfg, log = console.log, { force = false } = {}) {
   validate(cfg);
   saveConfig(dir, cfg);
+  const lockFile = path.join(dir, "devagent.lock.json");
+  let lock = {}; try { lock = JSON.parse(fs.readFileSync(lockFile, "utf8")).files || {}; } catch {}
   for (const [rel, content, overwrite] of files(cfg)) {
     const f = path.join(dir, rel);
     if (rel === ".gitignore" && fs.existsSync(f)) {
@@ -63,10 +66,25 @@ function apply(dir, cfg, log = console.log) {
       continue;
     }
     if (fs.existsSync(f) && !overwrite) { log(`  유지  ${rel}`); continue; }
+    if (fs.existsSync(f)) {
+      const cur = fs.readFileSync(f, "utf8");
+      if (cur === content) { lock[rel] = sha(content); log(`  같음  ${rel}`); continue; }
+      // devagent가 마지막으로 만든 내용과 다르면(사람/AI가 수정) 덮어쓰지 않는다
+      const modified = lock[rel] ? sha(cur) !== lock[rel] : true;
+      if (modified && !force) {
+        const p = path.join(dir, ".devagent", "proposed", rel);
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, content);
+        log(`  건너뜀 ${rel} (수정된 파일 — 새 버전은 .devagent/proposed/${rel}, 덮어쓰려면 --force)`);
+        continue;
+      }
+    }
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, content);
+    lock[rel] = sha(content);
     log(`  생성  ${rel}`);
   }
+  fs.writeFileSync(lockFile, JSON.stringify({ note: "devagent가 마지막으로 생성한 파일 해시 — 수정된 파일은 apply가 덮어쓰지 않음", files: lock }, null, 2) + "\n");
   // 플랫폼 변경 등으로 필요 없어진 빌드 워크플로 제거
   const wf = path.join(dir, ".github/workflows/build-check.yml");
   if (!(cfg.git.buildCheck && cfg.git.pushOn !== "never") && fs.existsSync(wf)) { fs.unlinkSync(wf); log("  삭제  .github/workflows/build-check.yml"); }

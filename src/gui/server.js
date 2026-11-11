@@ -55,7 +55,7 @@ function serve({ dir, port }) {
           return send(res, 200, R.view(d, Number(q.since) || 0));
         }
         case "/api/usage":
-          return send(res, 200, require("../runner").usage(d));
+          return send(res, 200, require("../runner").usage(d, q.force === "1"));
         case "/api/progress":
           return send(res, 200, require("../progress").progress(d));
         case "/api/verify-model": {
