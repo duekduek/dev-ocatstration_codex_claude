@@ -5,9 +5,32 @@ description: devagent(Codex 기획/리뷰 + Claude 개발, Docker 격리, phase�
 
 # devagent 실행 도우미
 
-devagent CLI 경로: `node "__DEVAGENT_BIN__"` (아래에서 `devagent`로 표기). 모든 명령에 `--dir <프로젝트 폴더>`를 붙일 수 있다.
+목표: 사용자가 원하는 프로젝트 폴더에서 **devagent 설치 → 환경 점검 → 누락 도구 설치 → 설정 → 로그인 → 저장소 → 개발 시작**까지 막힘 없이 가게 한다. 한 번에 한 단계씩, 결과를 확인하며 진행한다.
 
-목표: 사용자가 원하는 프로젝트 폴더에서 **환경 점검 → 누락 도구 설치 → 설정 → 로그인 → 저장소 → 개발 시작**까지 막힘 없이 가게 한다. 한 번에 한 단계씩, 결과를 확인하며 진행한다.
+아래에서 `devagent`는 0단계에서 찾은 실행 명령을 뜻한다. 모든 명령에 `--dir <프로젝트 폴더>`를 붙일 수 있다.
+
+## 0. devagent 찾기 / 없으면 설치
+
+다음 순서로 찾고, 처음 찾은 것을 `devagent` 명령으로 쓴다.
+1. `devagent --help`가 동작하면 → `devagent`
+2. `~/.devagent/app/bin/devagent.js`가 있으면 → `node ~/.devagent/app/bin/devagent.js`
+3. 이 SKILL.md가 devagent 저장소 안에 있으면(플러그인 설치 등, `../../bin/devagent.js` 존재) → `node <그 경로>`
+
+못 찾으면 설치한다. 설치 전에 "devagent를 ~/.devagent/app 에 설치할게요"라고 알리고 승인을 받는다.
+
+1. **node(18+)와 git 확인.** 없으면 OS별 설치 명령을 보여주고 승인 후 실행한다.
+   - Windows: `winget install -e --id OpenJS.NodeJS.LTS`, `winget install -e --id Git.Git` (설치 후 새 터미널이 필요할 수 있음 → PATH 갱신 안내)
+   - Mac: `brew install node git` (brew 없으면 https://brew.sh 안내)
+   - Linux: 배포판 패키지 명령 제시 (sudo는 사용자가 직접)
+2. **받기.** 저장소는 private(`duekduek/dev-ocatstration_codex_claude`)이므로 GitHub 인증이 필요하다.
+   - `gh`가 있고 로그인돼 있으면: `gh repo clone duekduek/dev-ocatstration_codex_claude ~/.devagent/app`
+   - `gh`가 없으면 설치(`winget install -e --id GitHub.cli` / `brew install gh`) 후 사용자가 `gh auth login`을 직접 하도록 터미널에서 안내하고, 끝나면 위 clone 실행.
+   - 접근 권한이 없다는 오류면: 저장소 소유자에게 협업자 초대를 받아야 한다고 알리고 중단.
+   - 이미 `~/.devagent/app`이 있으면 `git -C ~/.devagent/app pull`로 업데이트.
+3. **등록.** `npm link`는 전역 설치라 권한 문제가 날 수 있으므로 기본은 하지 않고 `node ~/.devagent/app/bin/devagent.js`로 사용한다. 사용자가 원하면 `cd ~/.devagent/app && npm link`.
+4. `devagent --help`로 동작 확인.
+
+(Windows에서 `~`는 `%USERPROFILE%`, 예: `C:\Users\<이름>\.devagent\app`)
 
 ## 1. 환경 점검 (항상 먼저)
 

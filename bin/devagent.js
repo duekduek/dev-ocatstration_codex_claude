@@ -139,8 +139,7 @@ Docker    ${s.docker ? "실행 중" : "꺼짐"}
       const src = path.join(__dirname, "..", "skills", "devagent", "SKILL.md");
       const dest = path.join(os.homedir(), ".claude", "skills", "devagent");
       fs.mkdirSync(dest, { recursive: true });
-      const binPath = path.resolve(__dirname, "devagent.js").replace(/\\/g, "/");
-      fs.writeFileSync(path.join(dest, "SKILL.md"), fs.readFileSync(src, "utf8").replaceAll("__DEVAGENT_BIN__", binPath));
+      fs.copyFileSync(src, path.join(dest, "SKILL.md"));
       return console.log(`스킬 설치됨: ${dest}\\SKILL.md\nClaude Code에서 /devagent 로 사용하세요.`);
     }
     case "gui": return require("../src/gui/server").serve({ dir, port: Number(o.port) || 4317 });

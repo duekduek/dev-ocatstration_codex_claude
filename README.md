@@ -11,7 +11,22 @@
 - Node 18 이상, git, Docker Desktop
 - 설치 상태는 `devagent doctor`로 점검할 수 있습니다.
 
-## 설치
+## 처음 시작하기 (가장 쉬운 방법)
+
+Claude Code만 있으면 됩니다. 아래 두 줄로 플러그인을 설치한 뒤 `/devagent`를 실행하세요.
+```
+/plugin marketplace add duekduek/dev-ocatstration_codex_claude
+/plugin install devagent@devagent-marketplace
+```
+스킬이 차례로 진행합니다.
+- 컴퓨터에 devagent가 없으면 `~/.devagent/app`에 설치합니다.
+- Node, git, Docker가 없으면 설치합니다. 설치 전에 한 번 확인을 받습니다.
+- 플랫폼별로 무엇을 어디서 실행할 수 있는지 안내합니다.
+- 프로젝트 설정, 로그인, 저장소 생성, 개발 시작까지 이어서 진행합니다.
+
+저장소가 private이라 GitHub 접근 권한(협업자 초대)이 필요합니다.
+
+## 직접 설치
 ```bash
 git clone <이 저장소> && cd dev-ocatstration_codex_claude
 npm link          # 'devagent' 명령 등록 (또는 node bin/devagent.js 로 실행)

@@ -1,0 +1,6 @@
+{
+  "name": "devagent",
+  "version": "0.1.0",
+  "description": "Codex(기획/리뷰) + Claude(개발) 멀티 에이전트 개발 환경을 Docker로 구성하고 phase별로 GitHub에 올리는 devagent 실행 도우미",
+  "author": { "name": "duekduek" }
+}

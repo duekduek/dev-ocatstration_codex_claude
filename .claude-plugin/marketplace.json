@@ -1,0 +1,11 @@
+{
+  "name": "devagent-marketplace",
+  "owner": { "name": "duekduek" },
+  "plugins": [
+    {
+      "name": "devagent",
+      "source": "./",
+      "description": "devagent 설치·환경 점검·프로젝트 설정·개발 시작을 안내하는 스킬"
+    }
+  ]
+}
