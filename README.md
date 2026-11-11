@@ -24,11 +24,11 @@ Claude Code만 있으면 됩니다. 아래 두 줄로 플러그인을 설치한 
 - 플랫폼별로 무엇을 어디서 실행할 수 있는지 안내합니다.
 - 프로젝트 설정, 로그인, 저장소 생성, 개발 시작까지 이어서 진행합니다.
 
-저장소가 private이라 GitHub 접근 권한(협업자 초대)이 필요합니다.
+skills CLI로 설치할 수도 있습니다: `npx skills add duekduek/dev-ocatstration_codex_claude`
 
 ## 직접 설치
 ```bash
-git clone <이 저장소> && cd dev-ocatstration_codex_claude
+git clone https://github.com/duekduek/dev-ocatstration_codex_claude.git && cd dev-ocatstration_codex_claude
 npm link          # 'devagent' 명령 등록 (또는 node bin/devagent.js 로 실행)
 devagent install-skill   # (선택) Claude Code 스킬 /devagent 설치
 ```

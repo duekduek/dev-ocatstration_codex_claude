@@ -22,10 +22,8 @@ description: devagent(Codex 기획/리뷰 + Claude 개발, Docker 격리, phase�
    - Windows: `winget install -e --id OpenJS.NodeJS.LTS`, `winget install -e --id Git.Git` (설치 후 새 터미널이 필요할 수 있음 → PATH 갱신 안내)
    - Mac: `brew install node git` (brew 없으면 https://brew.sh 안내)
    - Linux: 배포판 패키지 명령 제시 (sudo는 사용자가 직접)
-2. **받기.** 저장소는 private(`duekduek/dev-ocatstration_codex_claude`)이므로 GitHub 인증이 필요하다.
-   - `gh`가 있고 로그인돼 있으면: `gh repo clone duekduek/dev-ocatstration_codex_claude ~/.devagent/app`
-   - `gh`가 없으면 설치(`winget install -e --id GitHub.cli` / `brew install gh`) 후 사용자가 `gh auth login`을 직접 하도록 터미널에서 안내하고, 끝나면 위 clone 실행.
-   - 접근 권한이 없다는 오류면: 저장소 소유자에게 협업자 초대를 받아야 한다고 알리고 중단.
+2. **받기.** 공개 저장소이므로 인증 없이 받을 수 있다.
+   - `git clone https://github.com/duekduek/dev-ocatstration_codex_claude.git ~/.devagent/app`
    - 이미 `~/.devagent/app`이 있으면 `git -C ~/.devagent/app pull`로 업데이트.
 3. **등록.** `npm link`는 전역 설치라 권한 문제가 날 수 있으므로 기본은 하지 않고 `node ~/.devagent/app/bin/devagent.js`로 사용한다. 사용자가 원하면 `cd ~/.devagent/app && npm link`.
 4. `devagent --help`로 동작 확인.
