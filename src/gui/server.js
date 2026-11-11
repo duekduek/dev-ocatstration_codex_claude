@@ -116,11 +116,22 @@ function serve({ dir, port }) {
     }
   });
 
-  server.listen(port, "127.0.0.1", () => {
-    const u = `http://127.0.0.1:${port}`;
-    console.log(`devagent GUI: ${u}  (종료: Ctrl+C)`);
+  const u = `http://127.0.0.1:${port}`;
+  const openBrowser = () => {
     const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", u]] : process.platform === "darwin" ? ["open", [u]] : ["xdg-open", [u]];
     if (!process.env.DEVAGENT_NO_OPEN) require("child_process").spawn(opener[0], opener[1], { stdio: "ignore", detached: true }).unref();
+  };
+  // 이미 GUI가 켜져 있으면(포트 사용 중) 브라우저만 열고 종료
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.log(`devagent GUI가 이미 실행 중입니다: ${u} — 브라우저만 엽니다.`);
+      openBrowser();
+      setTimeout(() => process.exit(0), 500);
+    } else { console.error(e.message); process.exit(1); }
+  });
+  server.listen(port, "127.0.0.1", () => {
+    console.log(`devagent GUI: ${u}  (종료: Ctrl+C 또는 이 창 닫기)`);
+    openBrowser();
   });
   return server;
 }

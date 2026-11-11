@@ -68,6 +68,9 @@ devagent repo                    # GitHub 저장소(기본 private) 생성 + 첫
 devagent start                   # Codex 실행 → 개발 시작/이어하기
 ```
 
+### 바로가기 (Windows)
+`scripts/devagent-gui.cmd <프로젝트 폴더>`는 Docker Desktop이 꺼져 있으면 켜고, 엔진이 준비될 때까지 기다린 뒤 GUI를 엽니다. 바탕화면 바로가기는 이 스크립트를 대상으로 만들면 됩니다. GUI가 이미 켜져 있으면 브라우저만 엽니다.
+
 ### 웹 화면 (`devagent gui`, http://127.0.0.1:4317)
 - **진행** 탭
   - Phase 카드: 상태가 대기 → 개발 중 → 검토 중 → 수정 중 → 완료로 바뀌고, 세부 작업과 보고서·리뷰·커밋이 함께 보입니다. phase가 끝나면 알림이 뜹니다.
