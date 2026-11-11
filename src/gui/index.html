@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>devagent</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #66707c; --line: #e2e5ea;
+    --accent: #3b5bdb; --accent-text: #fff; --ok: #2b8a3e; --bad: #c92a2a; --code: #f1f3f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --card: #1d2026; --text: #e7e9ec; --muted: #9aa3ad; --line: #2c3038;
+      --accent: #5c7cfa; --ok: #51cf66; --bad: #ff6b6b; --code: #23272e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+  .actions button { text-align: left; padding: 10px 12px; }
+  .actions small { display: block; color: var(--muted); font-size: 12px; }
+  .status { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; }
+  .status dt { color: var(--muted); }
+  .status dd { margin: 0; word-break: break-all; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  pre { background: var(--code); border-radius: 6px; padding: 10px; margin: 0; max-height: 220px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .check input { width: auto; }
+  @media (max-width: 520px) { .row { flex-direction: column; } .status { grid-template-columns: 1fr; } .status dd { margin-bottom: 6px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>devagent</h1>
+  <p class="sub">Codex가 기획·검토하고 Claude가 개발합니다. Docker 컨테이너 안에서만 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
+
+  <section class="card">
+    <h2>프로젝트 폴더</h2>
+    <div class="row">
+      <input id="dir" placeholder="C:\Users\...\my-app">
+      <button id="load">불러오기</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>설정</h2>
+    <div class="grid">
+      <div><label for="name">프로젝트 이름 (저장소 이름)</label><input id="name"></div>
+      <div><label for="platform">플랫폼</label><select id="platform"></select></div>
+      <div><label for="plannerModel">Codex 모델 (기획/검토, 비우면 기본값)</label><input id="plannerModel" list="plannerList"><datalist id="plannerList"></datalist></div>
+      <div><label for="reasoning">Codex 추론 강도</label><select id="reasoning"></select></div>
+      <div><label for="devModel">Claude 모델 (개발)</label><input id="devModel" list="devList"><datalist id="devList"></datalist></div>
+      <div><label for="visibility">GitHub 저장소</label><select id="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+      <div><label for="pushOn">phase 완료 시</label><select id="pushOn"><option value="phase">커밋 + push</option><option value="never">커밋만</option></select></div>
+      <div><label for="specFile">요구사항 명세 파일</label><input id="specFile"></div>
+      <div class="check"><input type="checkbox" id="buildCheck"><label for="buildCheck" style="margin:0">GitHub Actions 빌드 확인</label></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="save">저장하고 파일 생성</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>실행</h2>
+    <div class="actions">
+      <button data-act="login">1. 로그인<small>이미지 빌드 + Claude/Codex/GitHub</small></button>
+      <button data-act="repo">2. 저장소 만들기<small>GitHub 생성 + 첫 커밋</small></button>
+      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">Codex 실행 (이어하기 포함)</small></button>
+      <button data-act="shell">컨테이너 셸<small>직접 명령 실행</small></button>
+    </div>
+    <p class="sub" style="margin:10px 0 0;font-size:12px">로그인과 개발은 대화형이라 새 터미널 창에서 열립니다.</p>
+  </section>
+
+  <section class="card">
+    <h2>상태 <button id="refresh" style="float:right;padding:2px 10px;font-size:12px">새로고침</button></h2>
+    <dl class="status" id="status"><dt>상태</dt><dd>불러오는 중…</dd></dl>
+  </section>
+
+  <section class="card">
+    <h2>로그</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; };
+const api = async (p, body) => {
+  const r = await fetch(p, { method: body ? "POST" : "GET", headers: { "x-devagent-token": TOKEN, "content-type": "application/json" }, body: body && JSON.stringify(body) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+};
+const dir = () => $("dir").value.trim();
+let meta;
+
+function fill(cfg) {
+  const c = cfg || meta.defaults;
+  $("name").value = c.name || dir().split(/[\\/]/).filter(Boolean).pop() || "";
+  $("platform").value = c.platform; $("plannerModel").value = c.planner.model; $("reasoning").value = c.planner.reasoning;
+  $("devModel").value = c.developer.model; $("visibility").value = c.git.visibility; $("pushOn").value = c.git.pushOn;
+  $("buildCheck").checked = c.git.buildCheck; $("specFile").value = c.specFile;
+}
+function readForm() {
+  return { name: $("name").value.trim(), platform: $("platform").value, specFile: $("specFile").value.trim(),
+    planner: { model: $("plannerModel").value.trim(), reasoning: $("reasoning").value },
+    developer: { model: $("devModel").value.trim() },
+    git: { visibility: $("visibility").value, pushOn: $("pushOn").value, buildCheck: $("buildCheck").checked } };
+}
+const mark = (v) => v === undefined ? "-" : v ? '<span class="ok">O</span>' : '<span class="bad">X</span>';
+async function load() {
+  try { localStorage.setItem("devagent.dir", dir()); } catch {}
+  $("status").innerHTML = "<dt>상태</dt><dd>불러오는 중…</dd>";
+  try {
+    const p = await api("/api/project?dir=" + encodeURIComponent(dir()));
+    fill(p.config);
+    const L = p.login;
+    $("status").innerHTML = `
+      <dt>설정</dt><dd>${p.config ? "있음" : '<span class="bad">없음 — 설정 저장 필요</span>'}</dd>
+      <dt>Docker</dt><dd>${p.docker ? '<span class="ok">실행 중</span>' : '<span class="bad">꺼짐 — Docker Desktop 실행</span>'}</dd>
+      <dt>로그인</dt><dd>${L ? `Claude ${mark(L.claude)} · Codex ${mark(L.codex)} · GitHub ${mark(L.gh)}` : "확인 불가 (이미지 없음 — 1. 로그인)"}</dd>
+      <dt>원격 저장소</dt><dd>${p.remote ? `<a href="${p.remote.replace(/\.git$/, "")}" target="_blank" rel="noopener">${p.remote}</a>` : "없음"}</dd>
+      <dt>최근 커밋</dt><dd>${p.lastCommit || "없음"}</dd>`;
+  } catch (e) { $("status").innerHTML = `<dt>오류</dt><dd class="bad">${e.message}</dd>`; }
+}
+
+(async () => {
+  meta = await api("/api/meta");
+  for (const [k, v] of Object.entries(meta.platforms)) $("platform").add(new Option(`${v}`, k));
+  for (const v of meta.hints.reasoning) $("reasoning").add(new Option(v, v));
+  for (const v of meta.hints.planner.slice(1)) $("plannerList").append(new Option(v));
+  for (const v of meta.hints.developer.slice(0, 3)) $("devList").append(new Option(v));
+  let saved = ""; try { saved = localStorage.getItem("devagent.dir") || ""; } catch {}
+  $("dir").value = saved || "__DIR__";
+  fill(null);
+  load();
+})();
+
+$("load").onclick = load;
+$("refresh").onclick = load;
+$("save").onclick = async () => {
+  $("save").disabled = true;
+  try { const r = await api("/api/save", { dir: dir(), config: readForm() }); log(r.log.join("\n")); log("저장 완료"); load(); }
+  catch (e) { log("오류: " + e.message); }
+  $("save").disabled = false;
+};
+document.querySelectorAll("[data-act]").forEach((b) => b.onclick = async () => {
+  try { await api("/api/terminal", { dir: dir(), action: b.dataset.act }); log(`${b.dataset.act}: 새 터미널 창에서 실행됨`); }
+  catch (e) { log("오류: " + e.message); }
+});
+</script>
+</body>
+</html>
