@@ -11,6 +11,9 @@ const DEFAULT_CONFIG = {
   git: { visibility: "private", pushOn: "phase", buildCheck: true },
   maxReviewRounds: 3,
   specFile: "docs/SPEC.md",
+  autoApprove: true,    // 계획 승인을 묻지 않고 바로 진행
+  autoContinue: true,   // 웹 실행 시 턴이 끝나면 자동으로 계속 진행
+  maxAutoContinue: 40,
 };
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
@@ -63,12 +66,16 @@ services:
       - gh-config:/home/node/.config/gh
 ${ports}
 volumes:
+  # 여러 프로젝트가 공유하는 볼륨 (devagent가 미리 생성)
   claude-home:
     name: devagent-claude-home
+    external: true
   codex-home:
     name: devagent-codex-home
+    external: true
   gh-config:
     name: devagent-gh-config
+    external: true
 `;
 }
 
@@ -76,16 +83,18 @@ volumes:
 const q = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
 
 // 개발 담당을 비대화형으로 호출하는 명령 (기획 담당이 셸에서 실행)
+// 실행 로그는 .devagent/dev.jsonl 에 남기고(웹 화면 표시용), 기획 담당에게는 최종 답변만 보여준다
 function devCmd(cfg, task) {
   const d = cfg.developer;
+  const pre = "mkdir -p .devagent && ";
   if (d.tool === "codex") {
     const m = d.model ? ` -m ${d.model}` : "";
     const r = d.reasoning ? ` -c model_reasoning_effort=${q(d.reasoning)}` : "";
-    return `codex exec${m}${r} --dangerously-bypass-approvals-and-sandbox ${q(task)}`;
+    return `${pre}codex exec --json${m}${r} --dangerously-bypass-approvals-and-sandbox ${q(task)} 2>/dev/null | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | select(.type=="item.completed" and .item.type=="agent_message") | .item.text'`;
   }
   const m = d.model ? ` --model ${d.model}` : "";
   const e = d.reasoning ? ` --effort ${d.reasoning}` : "";
-  return `claude -p ${q(task)}${m}${e} --permission-mode bypassPermissions`;
+  return `${pre}claude -p ${q(task)}${m}${e} --permission-mode bypassPermissions --output-format stream-json --verbose 2>&1 | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | select(.type=="result") | .result'`;
 }
 
 const PLANNER_DOC = "docs/agents/PLANNER.md";
@@ -129,7 +138,9 @@ ${ci ? `   - push 후 GitHub Actions 빌드 결과를 확인한다 (\`gh run wat
      - 한 phase = 화면 하나 또는 기능 하나(+그 테스트). 개발 담당이 **한 번 호출로 끝낼 수 있는 크기**(변경 파일 대략 10개 이내)로 정한다.
      - 큰 기능은 "데이터 모델 → 로직 → 화면 → 연동"처럼 여러 phase로 쪼갠다. 기반 작업(프로젝트 골격, 공통 컴포넌트)은 앞쪽에 둔다.
      - 각 phase에 목표 한 줄, 세부 작업 목록, 완료 기준을 적는다. phase 목록은 \`- [ ] Phase N: 제목\` 체크박스 형식.
-   - 작성 후 사용자에게 계획 승인을 받는다. 승인되면 \`docs/progress.json\`을 만든다 (아래 "진행 상태 기록").
+${cfg.autoApprove !== false
+    ? "   - **승인을 묻지 않는다.** 작성하면 바로 `docs/progress.json`을 만들고(아래 \"진행 상태 기록\") 3단계로 진행한다. 사용자는 웹 화면에서 계획을 본다."
+    : "   - 작성 후 사용자에게 계획 승인을 받는다(마지막 줄 [질문]). 승인되면 `docs/progress.json`을 만든다 (아래 \"진행 상태 기록\")."}
 3. **개발 요청**: 아직 안 끝난 첫 phase를 개발 담당에게 맡긴다. 호출 전에 progress.json에서 그 phase를 \`in_progress\`로 바꾸고 startedAt을 기록한다.
    \`\`\`bash
    ${devCmd(cfg, `${DEV_PREFIX} docs/PLAN.md의 Phase N을 구현해. 완료 기준을 모두 충족시키고, 끝나면 docs/reports/phase-N.md에 구현 내용·변경 파일·실행/테스트 방법을 요약해.`)}
@@ -172,11 +183,18 @@ ${step5}
 - current: 지금 진행 중인 phase id. phase 구성이 바뀌면 PLAN.md와 progress.json을 함께 고친다.
 - 멈출 때(사용 한도 등)도 note에 상황을 남긴다.
 
+## 진행 방식 (중요)
+
+- **사용자에게 진행 여부를 묻지 않는다.** "계속할까요?", "다음 phase로 넘어갈까요?" 같은 확인 없이 phase가 끝나면 바로 다음 phase로 진행한다.
+- 사용자의 결정이 꼭 필요한 경우(요구사항이 모순되거나 선택에 따라 결과가 크게 달라질 때)만 질문하고, 그때는 메시지 **마지막 줄에 \`[질문]\`**을 쓴다.
+- 모든 phase가 끝나면 최종 요약 메시지의 **마지막 줄에 \`[완료]\`**를 쓴다.
+- 한 번의 응답에서 가능한 한 많이 진행한다. 응답이 끝나도 [질문]/[완료]가 없으면 자동으로 "계속 진행" 요청이 온다.
+
 ## 규칙
 
 - 이 작업은 Docker 컨테이너(\`/workspace\`) 안에서만 실행된다. 컨테이너 밖이면 진행하지 말고 사용자에게 알린다.
 - ${p.notes}
-- 사소한 취향 문제로 반려하지 않는다. 같은 지적이 ${cfg.maxReviewRounds}회 반복되면 사용자에게 판단을 묻는다.
+- 사소한 취향 문제로 반려하지 않는다. 같은 지적이 ${cfg.maxReviewRounds}회 반복되면 사용자에게 판단을 묻는다([질문]).
 - 개발 담당 호출이 실패하면(사용 한도 초과 등) 진행 상황을 PLAN.md에 기록하고 멈춘 뒤 사용자에게 알린다.
 - 작업 재개 시에는 PLAN.md, docs/reviews, docs/reports를 읽고 이어서 진행한다.
 `;

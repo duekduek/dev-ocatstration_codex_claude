@@ -1,6 +1,6 @@
 // 플랫폼별 프리셋: Docker에 추가할 도구, .gitignore, 빌드 확인 워크플로, 에이전트 안내
 const common = {
-  gitignore: ["node_modules/", ".env", ".env.*", "!.env.example", "*.log", ".DS_Store"],
+  gitignore: ["node_modules/", ".env", ".env.*", "!.env.example", "*.log", ".DS_Store", ".devagent/"],
 };
 
 const PLATFORMS = {

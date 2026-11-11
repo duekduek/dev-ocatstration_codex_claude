@@ -36,7 +36,7 @@ for (const [pt, dt] of [["claude", "codex"], ["claude", "claude"], ["codex", "co
   const x = path.join(root, `roles-${pt}-${dt}`);
   const c = core.init(x, { planner: { tool: pt, model: "" }, developer: { tool: dt, model: dt === "codex" ? "gpt-6.1-sol" : "opus" } }, () => {});
   const plan = fs.readFileSync(path.join(x, "docs/agents/PLANNER.md"), "utf8");
-  assert(plan.includes(dt === "codex" ? "codex exec -m gpt-6.1-sol" : "claude -p"), `${pt}/${dt}: 개발 명령 불일치`);
+  assert(plan.includes(dt === "codex" ? "codex exec --json -m gpt-6.1-sol" : "claude -p") && plan.includes(".devagent/dev.jsonl"), `${pt}/${dt}: 개발 명령 불일치`);
   const ptr = (f) => fs.readFileSync(path.join(x, f), "utf8");
   assert(ptr(pt === "codex" ? "AGENTS.md" : "CLAUDE.md").includes("PLANNER.md"), `${pt}/${dt}: 기획 포인터 없음`);
   assert(ptr(dt === "codex" ? "AGENTS.md" : "CLAUDE.md").includes("DEVELOPER.md"), `${pt}/${dt}: 개발 포인터 없음`);

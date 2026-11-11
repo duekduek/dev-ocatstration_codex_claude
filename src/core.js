@@ -90,7 +90,14 @@ function run(cmd, args, { cwd, input, inherit } = {}) {
   if (r.error) throw new Error(`${cmd} 실행 실패: ${r.error.message}`);
   return { code: r.status, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() };
 }
-const dc = (dir, args, o = {}) => run("docker", ["compose", ...args], { cwd: dir, ...o });
+// 공유 로그인 볼륨(external)이 없으면 만든다
+let volumesReady = false;
+function ensureVolumes() {
+  if (volumesReady) return;
+  for (const v of ["devagent-claude-home", "devagent-codex-home", "devagent-gh-config"]) spawnSync("docker", ["volume", "create", v], { encoding: "utf8" });
+  volumesReady = true;
+}
+const dc = (dir, args, o = {}) => { ensureVolumes(); return run("docker", ["compose", ...args], { cwd: dir, ...o }); };
 const inContainer = (dir, script, o = {}) => dc(dir, ["run", "--rm", ...(o.extra || []), "dev", "bash", "-lc", script], o);
 
 function dockerOk() {
@@ -252,6 +259,6 @@ function openTerminal(dir, args) {
 module.exports = {
   CONFIG_FILE, MODEL_HINTS, PLATFORMS, DEFAULT_CONFIG, TOOLS,
   startScriptFor: (cfg, p) => startScript(cfg, p === undefined ? DEFAULT_PROMPT(cfg) : p),
-  hostLogins, importLogin,
+  hostLogins, importLogin, ensureVolumes,
   loadConfig, saveConfig, setKey, validate, init, apply, build, login, loginStatus, repo, start, status, openTerminal, dockerOk, DEFAULT_PROMPT,
 };

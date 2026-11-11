@@ -38,7 +38,7 @@ const fs = require("fs");
 const path = require("path");
 const hasProject = (dir) => fs.existsSync(path.join(dir, "docker-compose.yml"));
 const inContainer = (dir, args, timeout = 120000) =>
-  spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", ...args], { cwd: dir, encoding: "utf8", timeout });
+  (require("./core").ensureVolumes(), spawnSync)("docker", ["compose", "run", "--rm", "-T", "dev", ...args], { cwd: dir, encoding: "utf8", timeout });
 
 // 로그인된 계정 기준 Codex 모델 카탈로그
 // 컨테이너(개발에 실제로 쓰는 계정) → 호스트 codex → 기본 목록

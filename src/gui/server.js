@@ -41,6 +41,21 @@ function serve({ dir, port }) {
           const M = require("../models");
           return send(res, 200, M.modelsFor(q.tool === "claude" ? "claude" : "codex", d, { refresh: q.refresh === "1" }));
         }
+        case "/api/run": {
+          // 기획 담당 실행/대화: action = start | send | stop | reset (POST), 조회는 GET ?since=
+          const R = require("../runner");
+          if (req.method === "GET") return send(res, 200, R.view(d, Number(q.since) || 0));
+          const cfg = core.loadConfig(d);
+          if (!cfg) return send(res, 400, { error: "먼저 설정을 저장하세요" });
+          if (q.action === "start") R.start(d, cfg, q.text);
+          else if (q.action === "send") { if (!String(q.text || "").trim()) return send(res, 400, { error: "메시지가 비어 있습니다" }); R.send(d, cfg, String(q.text)); }
+          else if (q.action === "stop") R.stop(d);
+          else if (q.action === "reset") R.reset(d);
+          else return send(res, 400, { error: "unknown action" });
+          return send(res, 200, R.view(d, Number(q.since) || 0));
+        }
+        case "/api/usage":
+          return send(res, 200, require("../runner").usage(d));
         case "/api/progress":
           return send(res, 200, require("../progress").progress(d));
         case "/api/verify-model": {

@@ -6,245 +6,340 @@
 <title>devagent</title>
 <style>
   :root {
-    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #66707c; --line: #e2e5ea;
-    --accent: #3b5bdb; --accent-soft: #edf2ff; --accent-text: #fff; --ok: #2b8a3e; --bad: #c92a2a; --code: #f1f3f5;
+    --bg: #f4f5f7; --card: #ffffff; --text: #16191d; --muted: #5f6873; --line: #dfe3e8; --soft: #f0f2f5;
+    --accent: #3b5bdb; --accent-soft: #e8edff; --accent-text: #fff; --ok: #2b8a3e; --ok-soft: #d3f9d8;
+    --warn: #9c6500; --warn-soft: #fff3bf; --bad: #c92a2a; --bad-soft: #ffe3e3; --code: #f1f3f5;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14161a; --card: #1d2026; --text: #e7e9ec; --muted: #9aa3ad; --line: #2c3038;
-      --accent: #5c7cfa; --accent-soft: #232a45; --ok: #51cf66; --bad: #ff6b6b; --code: #23272e; }
+    :root { --bg: #111317; --card: #1a1d22; --text: #e9ebee; --muted: #9aa3ad; --line: #2b3038; --soft: #20242a;
+      --accent: #6d8bff; --accent-soft: #232b48; --ok: #51cf66; --ok-soft: #183a22; --warn: #ffd43b; --warn-soft: #3d3214;
+      --bad: #ff8787; --bad-soft: #3e1c1c; --code: #22262c; --shadow: none; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
-  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .card > h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
-  .card > h2 .right { margin-left: auto; display: flex; gap: 6px; }
-  .row { display: flex; gap: 8px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
-  .models { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
-  .model-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .model-box h3 { margin: 0 0 8px; font-size: 13px; }
-  .model-box .desc { color: var(--muted); font-size: 12px; margin: 6px 0 0; min-height: 1.5em; }
-  .verify { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; font-size: 12px; }
-  .banner { position: sticky; top: 0; z-index: 5; background: var(--bad); color: #fff; padding: 10px 16px; text-align: center; font-weight: 600; }
-  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button.small { padding: 3px 10px; font-size: 12px; }
-  button:disabled { opacity: .5; cursor: default; }
-  .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
-  .actions button { text-align: left; padding: 10px 12px; }
-  .actions small { display: block; color: var(--muted); font-size: 12px; }
-  .status { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; margin: 0; }
-  .status dt { color: var(--muted); }
-  .status dd { margin: 0; word-break: break-all; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  a { color: var(--accent); }
+  code { font: 13px ui-monospace, Consolas, "D2Coding", monospace; }
+  .muted { color: var(--muted); }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
-  pre.log { background: var(--code); border-radius: 6px; padding: 10px; margin: 0; max-height: 200px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
-  .check { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
-  .check input { width: auto; }
+  [hidden] { display: none !important; }
 
-  /* 문서 */
-  .docs { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 420px; }
+  /* 상단 바 */
+  .top { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1280px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .brand { font-weight: 800; font-size: 18px; letter-spacing: -.02em; }
+  .proj { display: flex; gap: 6px; align-items: center; flex: 1 1 360px; min-width: 0; }
+  .proj input { flex: 1; min-width: 0; font-size: 13px; padding: 6px 10px; }
+  .usage { display: flex; gap: 14px; flex-wrap: wrap; }
+  .meter { min-width: 150px; font-size: 12px; }
+  .meter .lbl { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+  .meter .lbl b { color: var(--text); font-weight: 600; }
+  .meter .bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; margin-top: 3px; }
+  .meter .bar span { display: block; height: 100%; background: var(--ok); }
+  .meter.mid .bar span { background: #f59f00; } .meter.low .bar span { background: var(--bad); }
+  .tabs { max-width: 1280px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; }
+  .tabs button { border: 0; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 20px 60px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow); min-width: 0; }
+  .card > h2 { font-size: 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .card > h2 .right { margin-left: auto; display: flex; gap: 6px; align-items: center; font-weight: 400; }
+  h3 { font-size: 14px; margin: 0 0 8px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  button:hover { background: var(--soft); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.07); }
+  button.danger { color: var(--bad); }
+  button.small { padding: 4px 10px; font-size: 13px; }
+  button:disabled { opacity: .45; cursor: default; }
+  .banner { background: var(--bad); color: #fff; padding: 10px 20px; text-align: center; font-weight: 600; }
+
+  /* 진행 탭 */
+  .run-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start; }
+  .pg-big { font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+  .progress { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; margin: 6px 0 12px; }
+  .progress span { display: block; height: 100%; background: var(--ok); transition: width .4s; }
+  .phases { list-style: none; padding: 0; margin: 0; }
+  .ph { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--card); }
+  .ph.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--accent-soft); }
+  .ph.done { background: var(--soft); }
+  .ph.done .ph-title { color: var(--muted); }
+  .ph-head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .ph-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--soft); color: var(--muted); flex: none; }
+  .ph.done .ph-num { background: var(--ok-soft); color: var(--ok); }
+  .ph.cur .ph-num { background: var(--accent); color: #fff; }
+  .ph-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
+  .ph-meta { font-size: 12px; color: var(--muted); margin: 4px 0 0 36px; }
+  .ph-body { font-size: 13px; margin: 8px 0 0 36px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .ph .tasks { list-style: none; padding: 0; margin: 6px 0 0; }
+  .ph .tasks li { padding: 2px 0; } .ph .tasks li.done { color: var(--muted); text-decoration: line-through; }
+  .ph .note { margin-top: 6px; color: var(--bad); }
+  .badge { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--soft); color: var(--muted); white-space: nowrap; flex: none; font-weight: 600; }
+  .badge.live { background: var(--accent-soft); color: var(--accent); }
+  .badge.wait { background: var(--warn-soft); color: var(--warn); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .mini { width: 64px; height: 5px; background: var(--soft); border-radius: 3px; overflow: hidden; flex: none; }
+  .mini span { display: block; height: 100%; background: var(--ok); }
+  .empty-plan { text-align: center; padding: 24px 8px; }
+  .empty-plan ol { text-align: left; display: inline-block; color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
+
+  /* 실시간 패널 */
+  .live-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--soft); }
+  .pill.running { background: var(--accent-soft); color: var(--accent); }
+  .pill.waiting { background: var(--warn-soft); color: var(--warn); }
+  .pill.done { background: var(--ok-soft); color: var(--ok); }
+  .pill.error { background: var(--bad-soft); color: var(--bad); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .pill.running .dot { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .now { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--soft); font-size: 13px; margin-bottom: 10px; display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+  .now .who { font-weight: 700; white-space: nowrap; }
+  .now .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  .feed { height: 460px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
+  .ev { margin: 0 0 8px; font-size: 13px; }
+  .ev .who { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 2px; text-transform: none; }
+  .ev.msg .bubble { background: var(--soft); border-radius: 10px; padding: 8px 12px; overflow-wrap: anywhere; }
+  .ev.msg.planner .bubble { border-left: 3px solid var(--accent); }
+  .ev.msg.developer .bubble { border-left: 3px solid var(--ok); }
+  .ev.msg.user { text-align: right; }
+  .ev.msg.user .bubble { display: inline-block; text-align: left; background: var(--accent); color: #fff; max-width: 85%; }
+  .ev.line { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font-size: 12.5px; }
+  .ev.line .ic { width: 16px; flex: none; text-align: center; }
+  .ev.line .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; }
+  .ev.line.file .tx { color: var(--text); }
+  .ev.line .src { font-size: 11px; font-weight: 700; flex: none; }
+  .ev.sys { text-align: center; font-size: 12px; color: var(--muted); }
+  .ev.err .bubble { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 6px 10px; }
+  .ev details summary { cursor: pointer; }
+  .ev pre { white-space: pre-wrap; max-height: 200px; overflow: auto; background: var(--code); padding: 6px 8px; border-radius: 6px; margin: 4px 0 0; font-size: 12px; }
+  .ev .todo { list-style: none; padding: 0; margin: 2px 0; }
+  .feed-tools { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin: 8px 0; }
+  .feed-tools label { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; }
+  .feed-tools input { width: auto; }
+  .chat { display: flex; gap: 8px; margin-top: 10px; }
+  .chat textarea { min-height: 44px; max-height: 160px; resize: vertical; font-size: 14px; }
+  .chat.waiting textarea { border-color: var(--warn); outline: 2px solid var(--warn-soft); }
+  .run-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sub-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .list { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  .list li { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .list li:last-child { border-bottom: 0; }
+  .list .t { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .list .x { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .linkish { color: var(--accent); cursor: pointer; }
+  .toast { position: fixed; right: 20px; bottom: 20px; z-index: 10; background: var(--ok); color: #fff; padding: 12px 18px; border-radius: 10px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: calc(100vw - 40px); }
+
+  /* 문서 탭 */
+  .docs { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; min-height: 520px; }
   .files { border-right: 1px solid var(--line); padding-right: 12px; display: flex; flex-direction: column; gap: 2px; }
-  .files button { border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .files button { border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 8px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
   .files button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .files .tag { font-size: 11px; color: var(--muted); display: block; font-weight: 400; }
-  .files .group { font-size: 11px; color: var(--muted); margin: 10px 8px 2px; }
-  .viewer-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .files .tag { font-size: 12px; color: var(--muted); display: block; font-weight: 400; }
+  .files .group { font-size: 12px; color: var(--muted); margin: 12px 10px 2px; font-weight: 600; }
+  .viewer-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
   .viewer-bar .path { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); margin-right: auto; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  .seg button { border: 0; border-radius: 0; padding: 4px 12px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 14px; font-size: 13px; }
   .seg button.on { background: var(--accent); color: var(--accent-text); }
-  textarea#editor { min-height: 460px; font: 13px/1.6 ui-monospace, Consolas, "D2Coding", monospace; resize: vertical; }
+  textarea#editor { min-height: 520px; font: 13.5px/1.65 ui-monospace, Consolas, "D2Coding", monospace; resize: vertical; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
-  .md { overflow-wrap: anywhere; max-height: 640px; overflow: auto; padding-right: 6px; }
-  .md h1, .md h2, .md h3, .md h4 { line-height: 1.3; margin: 1.2em 0 .5em; }
-  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; border-bottom: 1px solid var(--line); padding-bottom: 4px; } .md h3 { font-size: 15px; } .md h4 { font-size: 14px; }
-  .md :first-child { margin-top: 0; }
-  .md p { margin: .5em 0; }
-  .md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font: 12.5px ui-monospace, Consolas, monospace; }
-  .md pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow: auto; }
+  .md { overflow-wrap: anywhere; line-height: 1.7; }
+  .md h1, .md h2, .md h3, .md h4 { line-height: 1.35; margin: 1.3em 0 .5em; }
+  .md h1 { font-size: 24px; } .md h2 { font-size: 19px; border-bottom: 1px solid var(--line); padding-bottom: 5px; } .md h3 { font-size: 16px; } .md h4 { font-size: 15px; }
+  .md > :first-child { margin-top: 0; }
+  .md p { margin: .55em 0; }
+  .md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .md pre { background: var(--code); padding: 10px 12px; border-radius: 8px; overflow: auto; }
   .md pre code { background: none; padding: 0; }
-  .md table { border-collapse: collapse; margin: .6em 0; display: block; overflow-x: auto; }
-  .md th, .md td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; vertical-align: top; }
-  .md th { background: var(--code); }
-  .md blockquote { margin: .6em 0; padding: 2px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+  .md table { border-collapse: collapse; margin: .7em 0; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .md th { background: var(--soft); }
+  .md blockquote { margin: .6em 0; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
   .md ul, .md ol { padding-left: 1.4em; margin: .4em 0; }
   .md li.task { list-style: none; margin-left: -1.3em; }
   .md li.task input { width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: middle; }
   .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
-  .progress { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; margin: 2px 0 10px; }
-  .progress span { display: block; height: 100%; background: var(--ok); }
+  .ev .bubble.md p:first-child { margin-top: 0; } .ev .bubble.md p:last-child { margin-bottom: 0; }
 
-  /* 진행 상황 */
-  .pg-top { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
-  .pg-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
-  .pg-box h3 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-  .pg-big { font-size: 22px; font-weight: 700; }
-  .phase-list { list-style: none; padding: 0; margin: 8px 0 0; max-height: 220px; overflow: auto; }
-  .phase-list li { padding: 4px 6px; border-radius: 5px; display: flex; gap: 8px; align-items: baseline; }
-  .phase-list li.cur { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .phase-list li.done { color: var(--muted); }
-  .phase-list .ic { width: 1.2em; flex: none; text-align: center; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; margin: 0 6px 6px 0; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.live { background: var(--ok); animation: pulse 1.4s infinite; }
-  .dot.bad { background: var(--bad); } .dot.wait { background: #f59f00; }
-  @keyframes pulse { 50% { opacity: .35; } }
-  .feed { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-  .feed li { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
-  .feed li:last-child { border-bottom: 0; }
-  .feed .t { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .feed .x { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .feed a, .linkish { color: var(--accent); cursor: pointer; text-decoration: none; }
-  .phases { list-style: none; padding: 0; margin: 0; max-height: 520px; overflow: auto; }
-  .ph { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
-  .ph.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .ph.done .ph-title { color: var(--muted); }
-  .ph-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-  .ph-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ph-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
-  .ph-body { font-size: 13px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
-  .ph .tasks { list-style: none; padding: 0; margin: 6px 0 0; }
-  .ph .tasks li { padding: 1px 0; } .ph .tasks li.done { color: var(--muted); text-decoration: line-through; }
-  .ph .note { margin-top: 6px; color: var(--bad); font-size: 12px; }
-  .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--code); color: var(--muted); white-space: nowrap; flex: none; font-weight: 600; }
-  .badge.live { background: var(--accent-soft); color: var(--accent); }
-  .badge.wait { background: #fff3bf; color: #9c6500; }
-  .badge.ok { background: #d3f9d8; color: #2b8a3e; }
-  .badge.bad { background: #ffe3e3; color: #c92a2a; }
-  @media (prefers-color-scheme: dark) { .badge.wait { background: #3d3214; color: #ffd43b; } .badge.ok { background: #183a22; color: #69db7c; } .badge.bad { background: #3e1c1c; color: #ff8787; } }
-  .mini { width: 60px; height: 5px; background: var(--code); border-radius: 3px; overflow: hidden; flex: none; }
-  .mini span { display: block; height: 100%; background: var(--ok); }
-  .toast { position: fixed; right: 16px; bottom: 16px; z-index: 10; background: var(--ok); color: #fff; padding: 12px 16px; border-radius: 8px; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: calc(100vw - 32px); }
-  .pg-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-  .muted { color: var(--muted); }
-  @media (max-width: 760px) { .pg-top, .pg-bottom { grid-template-columns: 1fr; } }
+  /* 설정 탭 */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 18px; }
+  .models { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .model-box { border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .model-box .desc { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; min-height: 1.5em; }
+  .verify { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; font-size: 13px; }
+  .check { display: flex; align-items: center; gap: 8px; }
+  .check input { width: auto; }
+  .check label { margin: 0; color: var(--text); font-size: 14px; }
+  .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .actions button { text-align: left; padding: 12px 14px; }
+  .actions small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .status { display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+  .status dt { color: var(--muted); }
+  .status dd { margin: 0; word-break: break-all; }
+  pre.log { background: var(--code); border-radius: 8px; padding: 10px; margin: 0; max-height: 220px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
 
-  @media (max-width: 760px) {
-    .models { grid-template-columns: 1fr; }
-    .docs { grid-template-columns: 1fr; }
+  @media (max-width: 980px) { .run-grid, .sub-grid { grid-template-columns: minmax(0, 1fr); } .feed { height: 380px; } }
+  @media (max-width: 720px) {
+    .top-in, .tabs, main { padding-left: 16px; padding-right: 16px; }
+    .models, .docs { grid-template-columns: 1fr; }
     .files { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; flex-direction: row; flex-wrap: wrap; }
     .files .group { display: none; }
-    .row { flex-direction: column; }
     .status { grid-template-columns: 1fr; } .status dd { margin-bottom: 6px; }
+    .usage { width: 100%; } .meter { flex: 1; min-width: 130px; }
   }
 </style>
 </head>
 <body>
 <div class="banner" id="banner" hidden>GUI 서버에 연결할 수 없습니다. 터미널에서 <code>devagent gui</code>를 다시 실행한 뒤 이 페이지를 새로고침하세요.</div>
+<header class="top">
+  <div class="top-in">
+    <span class="brand">devagent</span>
+    <div class="proj">
+      <input id="dir" placeholder="프로젝트 폴더 (예: C:\Users\...\my-app)" aria-label="프로젝트 폴더">
+      <button class="small" id="load">불러오기</button>
+    </div>
+    <div class="usage" id="usage" title="남은 사용량 (로그인된 계정 기준)"></div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="run" class="on">진행</button>
+    <button data-tab="docs">문서</button>
+    <button data-tab="settings">설정</button>
+  </nav>
+</header>
+
 <main>
-  <h1>devagent</h1>
-  <p class="sub">요구사항(md)을 쓰면 기획 담당(기본 Codex)이 분석해서 계획을 세우고, 개발 담당(기본 Claude)이 phase별로 개발합니다. 모든 작업은 Docker 안에서 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
-
-  <section class="card">
-    <h2>프로젝트 폴더</h2>
-    <div class="row">
-      <input id="dir" placeholder="C:\Users\...\my-app">
-      <button id="load">불러오기</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>진행 상황 <span class="right"><label class="muted" style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px"><input type="checkbox" id="autoRefresh" checked style="width:auto"> 자동 새로고침 (10초)</label><button class="small" id="notifyBtn">브라우저 알림</button><button class="small" id="pgRefresh">새로고침</button></span></h2>
-    <div class="pg-top">
-      <div class="pg-box">
-        <h3>Phase</h3>
+  <!-- ===== 진행 ===== -->
+  <div data-panel="run">
+    <div class="run-grid">
+      <section class="card">
+        <h2>Phase <span class="right"><button class="small" id="notifyBtn">완료 알림 받기</button></span></h2>
         <div id="pgPhase" class="muted">불러오는 중…</div>
-      </div>
-      <div class="pg-box">
-        <h3>지금 실행 중</h3>
-        <div id="pgAgents" class="muted">불러오는 중…</div>
-        <h3 style="margin-top:14px">빌드 (GitHub Actions)</h3>
-        <div id="pgCi" class="muted">불러오는 중…</div>
-      </div>
-    </div>
-    <div class="pg-bottom">
-      <div class="pg-box"><h3>기록</h3><ul class="feed" id="pgTimeline"></ul></div>
-      <div class="pg-box"><h3>최근 변경된 파일</h3><ul class="feed" id="pgFiles"></ul></div>
-    </div>
-    <p class="muted" style="margin:10px 0 0;font-size:12px" id="pgAt"></p>
-  </section>
+      </section>
 
-  <section class="card">
-    <h2>모델</h2>
-    <div class="models">
-      <div class="model-box" data-role="planner">
-        <h3>기획/검토 담당</h3>
-        <label for="plannerTool">도구</label>
-        <select id="plannerTool"><option value="codex">Codex (기본)</option><option value="claude">Claude</option></select>
-        <label for="plannerModel" style="margin-top:8px">모델 <span id="plannerSrc"></span></label>
-        <select id="plannerModel"></select>
-        <div id="plannerReasoningBox"><label for="plannerReasoning" style="margin-top:8px">추론 강도</label><select id="plannerReasoning"></select></div>
-        <p class="desc" id="plannerDesc"></p>
-        <div class="verify"><button class="small" data-reload="planner">목록 새로고침</button><button class="small" data-verify="planner">계정에서 확인</button><span id="plannerVerify"></span></div>
-      </div>
-      <div class="model-box" data-role="developer">
-        <h3>개발 담당</h3>
-        <label for="developerTool">도구</label>
-        <select id="developerTool"><option value="claude">Claude (기본)</option><option value="codex">Codex</option></select>
-        <label for="developerModel" style="margin-top:8px">모델 <span id="developerSrc"></span></label>
-        <select id="developerModel"></select>
-        <div id="developerReasoningBox"><label for="developerReasoning" style="margin-top:8px">추론 강도</label><select id="developerReasoning"></select></div>
-        <p class="desc" id="developerDesc"></p>
-        <div class="verify"><button class="small" data-reload="developer">목록 새로고침</button><button class="small" data-verify="developer">계정에서 확인</button><span id="developerVerify"></span></div>
-      </div>
-    </div>
-
-    <h2>설정</h2>
-    <div class="grid">
-      <div><label for="name">프로젝트 이름 (저장소 이름)</label><input id="name"></div>
-      <div><label for="platform">플랫폼</label><select id="platform"></select></div>
-      <div><label for="visibility">GitHub 저장소</label><select id="visibility"><option value="private">private</option><option value="public">public</option></select></div>
-      <div><label for="pushOn">phase 완료 시</label><select id="pushOn"><option value="phase">커밋 + push</option><option value="never">커밋만</option></select></div>
-      <div><label for="specFile">요구사항 명세 파일</label><input id="specFile"></div>
-      <div class="check"><input type="checkbox" id="buildCheck"><label for="buildCheck" style="margin:0">GitHub Actions 빌드 확인</label></div>
-    </div>
-    <div class="row" style="margin-top:14px">
-      <button class="primary" id="save">저장하고 파일 생성</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>문서 <span class="right"><button class="small" id="docsRefresh">새로고침</button></span></h2>
-    <div class="docs">
-      <nav class="files" id="files"></nav>
-      <div>
-        <div class="viewer-bar">
-          <span class="path" id="docPath"></span>
-          <div class="seg"><button id="modeView" class="on">보기</button><button id="modeEdit">편집</button></div>
-          <button class="small primary" id="docSave" hidden>저장</button>
+      <section class="card">
+        <h2>실시간 작업</h2>
+        <div class="live-head">
+          <span class="pill" id="runPill"><span class="dot"></span><span id="runText">대기</span></span>
+          <span class="muted" style="font-size:13px" id="runSub"></span>
+          <span style="margin-left:auto" class="run-btns">
+            <button class="primary small" id="btnStart">▶ 시작 / 이어하기</button>
+            <button class="small danger" id="btnStop">■ 중지</button>
+            <button class="small" id="btnReset" title="기획 담당과의 대화를 새로 시작 (진행 파일은 유지)">새 대화</button>
+          </span>
         </div>
-        <div id="progress"></div>
-        <div class="md" id="docView"><p class="empty">문서를 선택하세요</p></div>
-        <textarea id="editor" hidden spellcheck="false"></textarea>
+        <div class="now" id="now"><span class="who">지금</span><span class="what muted">작업 없음</span></div>
+        <div class="feed" id="feed"></div>
+        <div class="feed-tools">
+          <label><input type="checkbox" id="showDetail"> 명령·생각 자세히 보기</label>
+          <label><input type="checkbox" id="showDev" checked> 개발 담당 작업 보기</label>
+          <label title="턴이 끝나면 확인 없이 자동으로 계속 진행"><input type="checkbox" id="autoContinue" checked> 자동 계속 진행</label>
+        </div>
+        <div class="chat" id="chatBox">
+          <textarea id="chatInput" placeholder="기획 담당에게 메시지 (Enter 보내기, Shift+Enter 줄바꿈)"></textarea>
+          <button class="primary" id="chatSend">보내기</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="sub-grid">
+      <section class="card"><h2>빌드 (GitHub Actions)</h2><ul class="list" id="pgCi"></ul></section>
+      <section class="card"><h2>기록</h2><ul class="list" id="pgTimeline"></ul></section>
+      <section class="card"><h2>최근 변경된 파일</h2><ul class="list" id="pgFiles"></ul></section>
+    </div>
+    <p class="muted" style="font-size:12px;margin:0" id="pgAt"></p>
+  </div>
+
+  <!-- ===== 문서 ===== -->
+  <div data-panel="docs" hidden>
+    <section class="card">
+      <h2>문서 <span class="right"><button class="small" id="docsRefresh">새로고침</button></span></h2>
+      <div class="docs">
+        <nav class="files" id="files"></nav>
+        <div style="min-width:0">
+          <div class="viewer-bar">
+            <span class="path" id="docPath"></span>
+            <div class="seg"><button id="modeView" class="on">보기</button><button id="modeEdit">편집</button></div>
+            <button class="small primary" id="docSave" hidden>저장 (Ctrl+S)</button>
+          </div>
+          <div id="progress"></div>
+          <div class="md" id="docView"><p class="empty">문서를 선택하세요</p></div>
+          <textarea id="editor" hidden spellcheck="false"></textarea>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
-  <section class="card">
-    <h2>실행</h2>
-    <div class="actions">
-      <button data-act="login">1. 로그인<small>이미지 빌드 + Claude/Codex/GitHub</small></button>
-      <button data-act="repo">2. 저장소 만들기<small>GitHub 생성 + 첫 커밋</small></button>
-      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">요구사항 분석부터 (이어하기 포함)</small></button>
-      <button data-act="shell">컨테이너 셸<small>직접 명령 실행</small></button>
-    </div>
-    <p class="sub" style="margin:10px 0 0;font-size:12px">로그인과 개발은 대화형이라 새 터미널 창에서 열립니다. 진행 중 생성되는 계획/보고서/리뷰는 위 문서에서 볼 수 있습니다.</p>
-  </section>
+  <!-- ===== 설정 ===== -->
+  <div data-panel="settings" hidden>
+    <section class="card">
+      <h2>역할별 AI · 모델</h2>
+      <div class="models">
+        <div class="model-box" data-role="planner">
+          <h3>기획/검토 담당</h3>
+          <label for="plannerTool">도구</label>
+          <select id="plannerTool"><option value="codex">Codex (기본)</option><option value="claude">Claude</option></select>
+          <label for="plannerModel" style="margin-top:10px">모델 <span id="plannerSrc"></span></label>
+          <select id="plannerModel"></select>
+          <div id="plannerReasoningBox"><label for="plannerReasoning" style="margin-top:10px">추론 강도</label><select id="plannerReasoning"></select></div>
+          <p class="desc" id="plannerDesc"></p>
+          <div class="verify"><button class="small" data-reload="planner">목록 새로고침</button><button class="small" data-verify="planner">계정에서 확인</button><span id="plannerVerify"></span></div>
+        </div>
+        <div class="model-box" data-role="developer">
+          <h3>개발 담당</h3>
+          <label for="developerTool">도구</label>
+          <select id="developerTool"><option value="claude">Claude (기본)</option><option value="codex">Codex</option></select>
+          <label for="developerModel" style="margin-top:10px">모델 <span id="developerSrc"></span></label>
+          <select id="developerModel"></select>
+          <div id="developerReasoningBox"><label for="developerReasoning" style="margin-top:10px">추론 강도</label><select id="developerReasoning"></select></div>
+          <p class="desc" id="developerDesc"></p>
+          <div class="verify"><button class="small" data-reload="developer">목록 새로고침</button><button class="small" data-verify="developer">계정에서 확인</button><span id="developerVerify"></span></div>
+        </div>
+      </div>
+    </section>
 
-  <section class="card">
-    <h2>상태 <span class="right"><button class="small" id="refresh">새로고침</button></span></h2>
-    <dl class="status" id="status"><dt>상태</dt><dd>불러오는 중…</dd></dl>
-  </section>
+    <section class="card">
+      <h2>프로젝트</h2>
+      <div class="grid">
+        <div><label for="name">프로젝트 이름 (저장소 이름)</label><input id="name"></div>
+        <div><label for="platform">플랫폼</label><select id="platform"></select></div>
+        <div><label for="visibility">GitHub 저장소</label><select id="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+        <div><label for="pushOn">phase 완료 시</label><select id="pushOn"><option value="phase">커밋 + push</option><option value="never">커밋만</option></select></div>
+        <div><label for="specFile">요구사항 명세 파일</label><input id="specFile"></div>
+        <div style="display:flex;flex-direction:column;gap:8px;justify-content:center">
+          <div class="check"><input type="checkbox" id="buildCheck"><label for="buildCheck">GitHub Actions 빌드 확인</label></div>
+          <div class="check"><input type="checkbox" id="autoApprove"><label for="autoApprove">계획 승인 없이 바로 개발</label></div>
+        </div>
+      </div>
+      <div style="margin-top:16px"><button class="primary" id="save">저장하고 파일 생성</button></div>
+    </section>
 
-  <section class="card">
-    <h2>로그</h2>
-    <pre class="log" id="log"></pre>
-  </section>
+    <section class="card">
+      <h2>준비 · 도구</h2>
+      <div class="actions">
+        <button data-act="login">로그인<small>이미지 빌드 + Claude/Codex/GitHub (PC 로그인 가져오기)</small></button>
+        <button data-act="repo">저장소 만들기<small>GitHub 생성 + 첫 커밋</small></button>
+        <button data-act="start">터미널에서 시작<small>기획 담당을 터미널 창에서 직접 실행</small></button>
+        <button data-act="shell">컨테이너 셸<small>직접 명령 실행</small></button>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">로그인처럼 직접 입력이 필요한 작업은 새 터미널 창에서 열립니다. 평소에는 <b>진행</b> 탭에서 시작하면 됩니다.</p>
+    </section>
+
+    <section class="card">
+      <h2>상태 <span class="right"><button class="small" id="refresh">새로고침</button></span></h2>
+      <dl class="status" id="status"><dt>상태</dt><dd>불러오는 중…</dd></dl>
+    </section>
+
+    <section class="card">
+      <h2>로그</h2>
+      <pre class="log" id="log"></pre>
+    </section>
+  </div>
 </main>
 <script>
 const TOKEN = "__TOKEN__";
@@ -255,13 +350,22 @@ const api = async (p, body) => {
   try {
     r = await fetch(p, { method: body ? "POST" : "GET", headers: { "x-devagent-token": TOKEN, "content-type": "application/json" }, body: body && JSON.stringify(body) });
   } catch (e) { $("banner").hidden = false; throw new Error("GUI 서버에 연결할 수 없음"); }
-  $("banner").hidden = r.status !== 403 ? true : false;
-  if (r.status === 403) { $("banner").textContent = "GUI 서버가 다시 시작되었습니다. 이 페이지를 새로고침하세요."; $("banner").hidden = false; }
+  $("banner").hidden = r.status !== 403;
+  if (r.status === 403) $("banner").textContent = "GUI 서버가 다시 시작되었습니다. 이 페이지를 새로고침하세요.";
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
 const dir = () => $("dir").value.trim();
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-let meta, models = { claude: [], codex: { models: [] } }, cfgCache = null;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let meta, cfgCache = null;
+
+// ---------- 탭 ----------
+function showTab(t) {
+  document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== t);
+  try { localStorage.setItem("devagent.tab", t); } catch {}
+}
+document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+function openInDocs(p) { showTab("docs"); openDoc(p); }
 
 // ---------- 마크다운 렌더러 (간단) ----------
 function inline(s) {
@@ -389,28 +493,31 @@ function fill(cfg) {
   $("name").value = c.name || dir().split(/[\\/]/).filter(Boolean).pop() || "";
   $("platform").value = c.platform; $("visibility").value = c.git.visibility; $("pushOn").value = c.git.pushOn;
   $("buildCheck").checked = c.git.buildCheck; $("specFile").value = c.specFile;
+  $("autoApprove").checked = c.autoApprove !== false;
+  $("autoContinue").checked = c.autoContinue !== false;
   applyModelValues(c);
 }
 function readForm() {
   return { name: $("name").value.trim(), platform: $("platform").value, specFile: $("specFile").value.trim(),
-    planner: roleValue("planner"),
-    developer: roleValue("developer"),
+    planner: roleValue("planner"), developer: roleValue("developer"),
+    autoApprove: $("autoApprove").checked, autoContinue: $("autoContinue").checked,
     git: { visibility: $("visibility").value, pushOn: $("pushOn").value, buildCheck: $("buildCheck").checked } };
 }
 const mark = (v) => v === undefined ? "-" : v ? '<span class="ok">O</span>' : '<span class="bad">X</span>';
 async function load() {
   try { localStorage.setItem("devagent.dir", dir()); } catch {}
   $("status").innerHTML = "<dt>상태</dt><dd>불러오는 중…</dd>";
-  loadDocs();
-  lastDocSig = ""; loadProgress();
+  runSeq = 0; $("feed").innerHTML = ""; feedEvents = [];
+  loadDocs(); lastDocSig = ""; loadProgress(); pollRun(); loadUsage();
   try {
     const p = await api("/api/project?dir=" + encodeURIComponent(dir()));
     cfgCache = p.config; fill(p.config);
+    if (!p.config) showTab("settings");
     const L = p.login;
     $("status").innerHTML = `
-      <dt>설정</dt><dd>${p.config ? "있음" : '<span class="bad">없음 — 설정 저장 필요</span>'}</dd>
+      <dt>설정</dt><dd>${p.config ? "있음" : '<span class="bad">없음 — 아래에서 저장하세요</span>'}</dd>
       <dt>Docker</dt><dd>${p.docker ? '<span class="ok">실행 중</span>' : '<span class="bad">꺼짐 — Docker Desktop 실행</span>'}</dd>
-      <dt>로그인</dt><dd>${L ? `Claude ${mark(L.claude)} · Codex ${mark(L.codex)} · GitHub ${mark(L.gh)}` : "확인 불가 (이미지 없음 — 1. 로그인)"}</dd>
+      <dt>로그인</dt><dd>${L ? `Claude ${mark(L.claude)} · Codex ${mark(L.codex)} · GitHub ${mark(L.gh)}` : "확인 불가 (이미지 없음 — 로그인 실행)"}</dd>
       <dt>원격 저장소</dt><dd>${p.remote ? `<a href="${esc(p.remote.replace(/\.git$/, ""))}" target="_blank" rel="noopener">${esc(p.remote)}</a>` : "없음"}</dd>
       <dt>최근 커밋</dt><dd>${esc(p.lastCommit || "없음")}</dd>`;
   } catch (e) { $("status").innerHTML = `<dt>오류</dt><dd class="bad">${esc(e.message)}</dd>`; }
@@ -451,7 +558,7 @@ async function openDoc(p, keepMode) {
   $("editor").value = d.content;
   if (!d.exists) {
     $("docView").innerHTML = p === docs.plan
-      ? '<p class="empty">아직 계획이 없습니다.<br>요구사항 명세를 작성한 뒤 <b>3. 개발 시작</b>을 누르면 기획 담당이 분석해서 이곳에 계획을 만듭니다.</p>'
+      ? '<p class="empty">아직 계획이 없습니다.<br>요구사항 명세를 작성한 뒤 <b>진행</b> 탭에서 <b>개발 시작</b>을 누르면 기획 담당이 분석해서 이곳에 계획을 만듭니다.</p>'
       : '<p class="empty">파일이 없습니다. <b>편집</b>을 눌러 작성하세요.</p>';
   } else renderDoc();
   setMode(keepMode ? mode : (d.exists ? "view" : (p === docs.plan ? "view" : "edit")));
@@ -520,7 +627,7 @@ function renderPhases(ph) {
       const meta = [x.tasks.length ? `작업 ${td}/${x.tasks.length}` : "", x.doneAt ? `완료 ${ago(Date.parse(x.doneAt))}` : x.startedAt ? `시작 ${ago(Date.parse(x.startedAt))}` : "",
         x.commit ? `<code>${esc(x.commit)}</code>` : "", link(x.report, "보고서"), link(x.review, "리뷰")].filter(Boolean).join(" · ");
       return `<li class="ph ${x.status}${i === ph.current ? " cur" : ""}" data-k="${esc(k)}">
-        <div class="ph-head"><span class="badge ${st[1]}">${st[0]}</span><span class="ph-title">${x.id ? `${esc(x.id)}. ` : ""}${esc(x.title)}</span>${x.tasks.length ? `<span class="mini"><span style="width:${Math.round(td / x.tasks.length * 100)}%"></span></span>` : ""}</div>
+        <div class="ph-head"><span class="ph-num">${x.done ? "✓" : esc(x.id ?? i + 1)}</span><span class="ph-title">${esc(x.title)}</span><span class="badge ${st[1]}">${st[0]}</span>${x.tasks.length ? `<span class="mini"><span style="width:${Math.round(td / x.tasks.length * 100)}%"></span></span>` : ""}</div>
         ${meta ? `<div class="ph-meta">${meta}</div>` : ""}
         ${open && (x.goal || x.tasks.length || x.note || x.requirements?.length) ? `<div class="ph-body">
           ${x.goal ? `<div>${esc(x.goal)}</div>` : ""}
@@ -545,29 +652,22 @@ async function loadProgress() {
     if (asked !== loadProgress.lastDir) { prevStatus = null; openPhases.clear(); loadProgress.lastDir = asked; }
     // Phase
     const ph = p.phases;
-    if (!ph.exists) $("pgPhase").innerHTML = `<p style="margin:0 0 10px">아직 계획이 없습니다. 요구사항 명세를 확인한 뒤 <b>개발 시작</b>을 누르면, 기획 담당이 요구사항을 분석해 개발 항목별로 phase를 나누고 여기에 표시합니다.</p>
-      <ol class="muted" style="margin:0 0 12px;padding-left:1.2em;font-size:13px"><li>새 터미널 창에서 기획 담당이 시작되고 요구사항을 분석합니다</li><li>계획(phase 목록)을 보여주고 승인을 물어봅니다 — 터미널에서 답해 주세요</li><li>승인하면 phase별 개발 → 검토 → 커밋이 진행되고 이 화면에 실시간으로 표시됩니다</li></ol>
-      <button class="primary" onclick="document.querySelector('[data-act=start]').click()">▶ 개발 시작</button>`;
+    if (!ph.exists) $("pgPhase").innerHTML = `<div class="empty-plan"><div style="font-size:16px;font-weight:600">아직 계획이 없습니다</div>
+      <ol><li>기획 담당이 요구사항 명세를 분석해 개발 항목별로 phase를 나눕니다</li><li>phase가 여기에 표시되고, 묻지 않고 바로 개발이 시작됩니다</li><li>phase가 끝날 때마다 상태가 바뀌고 알림이 뜹니다</li></ol><br>
+      <button class="primary" onclick="openInDocs(docs.spec)">요구사항 확인</button> <button class="primary" onclick="$('btnStart').click()">▶ 개발 시작</button></div>`;
     else if (!ph.items.length) $("pgPhase").innerHTML = '<p class="muted" style="margin:0">PLAN.md에 체크박스(- [ ]) phase가 없습니다.</p>';
     else renderPhases(ph);
-    // 에이전트
-    const ag = p.agents;
-    if (!ag.docker) $("pgAgents").innerHTML = '<span class="chip"><span class="dot bad"></span>Docker 꺼짐</span>';
-    else if (!ag.containers.length) $("pgAgents").innerHTML = '<span class="chip"><span class="dot"></span>실행 중인 에이전트 없음</span>';
-    else $("pgAgents").innerHTML = ag.containers.map((c) => c.roles.length
-      ? c.roles.map((r) => `<span class="chip"><span class="dot live"></span>${r.role} · ${r.tool} 작업 중</span>`).join("")
-      : `<span class="chip"><span class="dot wait"></span>컨테이너 실행 중 (${esc(c.since)})</span>`).join("");
     // CI
-    if (!p.ci) $("pgCi").innerHTML = '<span class="muted">확인 불가 (원격 저장소 없음 또는 PC의 gh 미로그인)</span>';
-    else if (!p.ci.length) $("pgCi").innerHTML = '<span class="muted">실행 기록 없음</span>';
-    else $("pgCi").innerHTML = p.ci.slice(0, 3).map((r) => {
-      const st = r.status !== "completed" ? ["wait", r.status === "queued" ? "대기" : "실행 중"] : r.conclusion === "success" ? ["live", "성공"] : r.conclusion === "skipped" ? ["", "건너뜀"] : ["bad", "실패"];
-      return `<div class="feed"><li style="grid-template-columns:auto 1fr auto"><span class="chip" style="margin:0"><span class="dot ${st[0]}"${st[0] === "live" ? ' style="animation:none"' : ""}></span>${st[1]}</span><a class="x" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.displayTitle)}">${esc(r.displayTitle)}</a><span class="t">${ago(Date.parse(r.createdAt))}</span></li></div>`;
+    if (!p.ci) $("pgCi").innerHTML = '<li class="muted" style="display:block">확인 불가 (원격 저장소 없음 또는 PC의 gh 미로그인)</li>';
+    else if (!p.ci.length) $("pgCi").innerHTML = '<li class="muted" style="display:block">실행 기록 없음</li>';
+    else $("pgCi").innerHTML = p.ci.slice(0, 5).map((r) => {
+      const st = r.status !== "completed" ? ["wait", r.status === "queued" ? "대기" : "실행 중"] : r.conclusion === "success" ? ["ok", "성공"] : r.conclusion === "skipped" ? ["", "건너뜀"] : ["bad", "실패"];
+      return `<li style="grid-template-columns:auto 1fr auto"><span class="badge ${st[0]}">${st[1]}</span><a class="x" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.displayTitle)}">${esc(r.displayTitle)}</a><span class="t">${ago(Date.parse(r.createdAt))}</span></li>`;
     }).join("");
     // 기록
     $("pgTimeline").innerHTML = p.timeline.length ? p.timeline.map((e) => `<li><span>${ICON[e.type] || "•"}</span><span class="x">${e.path ? `<a class="linkish" data-open="${esc(e.path)}">${esc(e.title)}</a>` : `${esc(e.title)} <span class="muted">${esc(e.sha || "")}</span>`}</span><span class="t">${ago(e.time)}</span></li>`).join("") : '<li class="muted">기록 없음</li>';
     $("pgFiles").innerHTML = p.recent.length ? p.recent.map((f) => `<li><span>·</span><span class="x" title="${esc(f.path)}">${/\.md$/i.test(f.path) ? `<a class="linkish" data-open="${esc(f.path)}">${esc(f.path)}</a>` : esc(f.path)}</span><span class="t">${ago(f.mtime)}</span></li>`).join("") : '<li class="muted">없음</li>';
-    document.querySelectorAll("[data-open]").forEach((a) => a.onclick = () => { document.getElementById("docView").scrollIntoView({ behavior: "smooth", block: "start" }); openDoc(a.dataset.open); });
+    document.querySelectorAll("[data-open]").forEach((a) => a.onclick = () => openInDocs(a.dataset.open));
     $("pgAt").textContent = `마지막 갱신: ${new Date(p.at).toLocaleTimeString()}`;
     // 문서 목록이 바뀌었으면(새 보고서/리뷰 등) 문서 영역도 갱신 — 편집 중이면 건드리지 않음
     const sig = p.timeline.filter((e) => e.path).map((e) => e.path + e.time).join();
@@ -577,25 +677,130 @@ async function loadProgress() {
   pgBusy = false;
   if (pgPending) { pgPending = false; loadProgress(); }
 }
-$("pgRefresh").onclick = loadProgress;
 $("notifyBtn").onclick = async () => {
   if (!window.Notification) return log("이 브라우저는 알림을 지원하지 않습니다");
   const p = await Notification.requestPermission();
   log(p === "granted" ? "phase 완료 시 브라우저 알림을 보냅니다" : "알림이 허용되지 않았습니다");
 };
-setInterval(() => { if ($("autoRefresh").checked && !document.hidden) loadProgress(); }, 10000);
+setInterval(() => { if (!document.hidden) loadProgress(); }, 8000);
+// ---------- 실시간 작업 (기획 담당 실행/대화) ----------
+let runSeq = 0, runStatus = "idle", feedEvents = [], runTimer = null;
+const TOOLNAME = () => ({ planner: cfgCache ? (cfgCache.planner.tool === "claude" ? "Claude" : "Codex") : "기획", developer: cfgCache ? (cfgCache.developer.tool === "codex" ? "Codex" : "Claude") : "개발" });
+const WHO = (src) => src === "planner" ? `기획 · ${TOOLNAME().planner}` : src === "developer" ? `개발 · ${TOOLNAME().developer}` : src === "user" ? "나" : "";
+const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], done: ["완료", "done"], error: ["오류", "error"] };
+
+function evHtml(e) {
+  const detail = $("showDetail").checked, dev = $("showDev").checked;
+  if (e.src === "developer" && !dev) return "";
+  const who = WHO(e.src);
+  switch (e.kind) {
+    case "message":
+      if (e.sub && !detail) return "";
+      return `<div class="ev msg ${e.src}"><div class="who">${esc(who)}${e.queued ? " · 대기열" : ""}</div><div class="bubble ${e.src === "user" ? "" : "md"}">${e.src === "user" ? esc(e.text).replace(/\n/g, "<br>") : md(e.text || "")}</div></div>`;
+    case "file": return `<div class="ev line file"><span class="ic">✎</span><span class="tx" title="${esc(e.path)}">${esc(e.path || e.text)}</span><span class="src">${esc(who)}</span></div>`;
+    case "command":
+      if (!detail) return `<div class="ev line"><span class="ic">›</span><span class="tx" title="${esc(e.text)}">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>`;
+      return `<div class="ev line"><span class="ic">›</span><span class="tx" title="${esc(e.text)}">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>`;
+    case "command-done":
+      if (!detail) return e.status === "fail" ? `<div class="ev line"><span class="ic bad">✗</span><span class="tx bad" title="${esc(e.text)}">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>` : "";
+      return `<div class="ev"><details><summary class="muted" style="font-size:12.5px">${e.status === "ok" ? "✓" : "✗"} <code>${esc(e.text)}</code></summary>${e.output ? `<pre>${esc(e.output)}</pre>` : ""}</details></div>`;
+    case "reading": return detail ? `<div class="ev line"><span class="ic">👁</span><span class="tx">${esc(e.path || e.text)}</span><span class="src">${esc(who)}</span></div>` : "";
+    case "thinking": return detail ? `<div class="ev line"><span class="ic">💭</span><span class="tx" style="white-space:normal;font-family:inherit">${esc(e.text)}</span></div>` : "";
+    case "subagent": return `<div class="ev line"><span class="ic">⑂</span><span class="tx">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>`;
+    case "todo": return `<div class="ev"><div class="who">${esc(who)} · 할 일</div><ul class="todo">${(e.items || []).map((t) => `<li class="${t.done ? "muted" : ""}">${t.done ? "☑" : "☐"} ${esc(t.text)}</li>`).join("")}</ul></div>`;
+    case "error": return `<div class="ev err"><div class="bubble">⚠ ${esc(e.text)}</div></div>`;
+    case "system": return `<div class="ev sys">— ${esc(e.text)} · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
+  }
+  return "";
+}
+function renderFeed(all) {
+  const f = $("feed"), atBottom = f.scrollHeight - f.scrollTop - f.clientHeight < 60;
+  if (all) f.innerHTML = feedEvents.map(evHtml).join("");
+  if (atBottom || all) f.scrollTop = f.scrollHeight;
+}
+function renderRun(v) {
+  runStatus = v.status;
+  const [label, cls] = RUN_LABEL[v.status] || RUN_LABEL.idle;
+  $("runPill").className = "pill " + cls; $("runText").textContent = label;
+  const sub = [];
+  if (v.status === "running" && v.startedAt) sub.push(`${Math.max(0, Math.floor((Date.now() - v.startedAt) / 60000))}분째`);
+  if (v.continues) sub.push(`자동 계속 ${v.continues}회`);
+  if (v.queue) sub.push(`보낼 메시지 ${v.queue}개 대기`);
+  if (v.status === "error" && v.error) sub.push(v.error.slice(0, 120));
+  if (v.status === "waiting") sub.push("아래 입력창에 답을 입력하세요");
+  $("runSub").textContent = sub.join(" · ");
+  $("btnStop").disabled = v.status !== "running";
+  $("btnStart").disabled = v.status === "running";
+  $("btnReset").disabled = v.status === "running";
+  $("chatBox").classList.toggle("waiting", v.status === "waiting");
+  $("btnStart").textContent = v.session && v.session.id ? "▶ 이어하기" : "▶ 개발 시작";
+  const c = v.current;
+  $("now").innerHTML = c && v.status === "running"
+    ? `<span class="who">${esc(WHO(c.src))}</span><span class="what" title="${esc(c.path || c.text)}">${c.kind === "file" ? "✎ " : c.kind === "reading" ? "👁 " : "› "}${esc(c.path || c.text)}</span><span class="muted">${ago(c.ts)}</span>`
+    : `<span class="who">지금</span><span class="what muted">${v.status === "running" ? "생각 중…" : "작업 없음"}</span>`;
+}
+async function pollRun() {
+  clearTimeout(runTimer);
+  if (!dir()) return;
+  try {
+    const v = await api(`/api/run?dir=${encodeURIComponent(dir())}&since=${runSeq}`);
+    if (v.events.length) { feedEvents.push(...v.events); if (feedEvents.length > 800) feedEvents.splice(0, feedEvents.length - 800); runSeq = v.seq; renderFeed(true); }
+    renderRun(v);
+  } catch (e) {}
+  runTimer = setTimeout(pollRun, runStatus === "running" ? 2000 : 5000);
+}
+async function runAction(action, text) {
+  try {
+    if (action === "start" || action === "send") await saveToggles();
+    const v = await api("/api/run", { dir: dir(), action, text, since: runSeq });
+    if (v.events.length) { feedEvents.push(...v.events); runSeq = v.seq; renderFeed(true); }
+    renderRun(v); pollRun();
+  } catch (e) { alert(e.message); }
+}
+// 자동 계속 진행 토글은 설정에 저장
+async function saveToggles() {
+  if (!cfgCache) return;
+  if ((cfgCache.autoContinue !== false) === $("autoContinue").checked) return;
+  const r = await api("/api/save", { dir: dir(), config: { ...cfgCache, autoContinue: $("autoContinue").checked } });
+  cfgCache = r.config;
+}
+$("btnStart").onclick = () => { if (dirty) return alert("문서 탭에서 편집 중인 내용을 먼저 저장하세요."); runAction("start"); };
+$("btnStop").onclick = () => runAction("stop");
+$("btnReset").onclick = () => { if (confirm("기획 담당과의 대화를 새로 시작할까요? (PLAN/진행 기록 파일은 유지됩니다)")) runAction("reset"); };
+$("chatSend").onclick = () => { const t = $("chatInput").value.trim(); if (!t) return; $("chatInput").value = ""; runAction("send", t); };
+$("chatInput").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("chatSend").click(); } };
+$("showDetail").onchange = $("showDev").onchange = () => renderFeed(true);
+$("autoContinue").onchange = () => saveToggles().catch((e) => log(e.message));
+
+// ---------- 사용량 ----------
+const resetIn = (t) => { if (!t) return ""; const m = Math.max(0, Math.round((t - Date.now()) / 60000)); return m < 60 ? `${m}분 후 초기화` : m < 1440 ? `${Math.floor(m / 60)}시간 ${m % 60}분 후 초기화` : `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간 후 초기화`; };
+function meterHtml(name, w) {
+  if (!w) return `<div class="meter"><div class="lbl"><span>${name}</span><b class="muted">정보 없음</b></div><div class="bar"><span style="width:0"></span></div></div>`;
+  const left = Math.max(0, 100 - w.used);
+  return `<div class="meter ${left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(resetIn(w.resetsAt))}"><div class="lbl"><span>${name}</span><b>${left}% 남음</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${esc(resetIn(w.resetsAt))}</span></div></div>`;
+}
+async function loadUsage() {
+  if (!dir()) return;
+  try {
+    const u = await api("/api/usage?dir=" + encodeURIComponent(dir()));
+    $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five) + meterHtml("Codex 주간", u.codex?.week) + meterHtml("Claude 5시간", u.claude?.five) + meterHtml("Claude 주간", u.claude?.week);
+  } catch {}
+}
+setInterval(() => { if (!document.hidden) loadUsage(); }, 60000);
 
 // ---------- 시작 ----------
 (async () => {
   meta = await api("/api/meta");
   for (const [k, v] of Object.entries(meta.platforms)) $("platform").add(new Option(v, k));
-  let saved = ""; try { saved = localStorage.getItem("devagent.dir") || ""; } catch {}
+  let saved = "", tab = "run"; try { saved = localStorage.getItem("devagent.dir") || ""; tab = localStorage.getItem("devagent.tab") || "run"; } catch {}
   $("dir").value = saved || "__DIR__";
+  showTab(tab);
   fill(null);
   load();
 })();
 
-$("load").onclick = () => { load(); };
+$("load").onclick = () => load();
+$("dir").onkeydown = (e) => { if (e.key === "Enter") load(); };
 $("refresh").onclick = load;
 $("save").onclick = async () => {
   $("save").disabled = true;
@@ -604,7 +809,6 @@ $("save").onclick = async () => {
   $("save").disabled = false;
 };
 document.querySelectorAll("[data-act]").forEach((b) => b.onclick = async () => {
-  if (b.dataset.act === "start" && dirty) { alert("요구사항 문서를 먼저 저장하세요."); return; }
   try { await api("/api/terminal", { dir: dir(), action: b.dataset.act }); log(`${b.dataset.act}: 새 터미널 창에서 실행됨`); }
   catch (e) { log("오류: " + e.message); }
 });
