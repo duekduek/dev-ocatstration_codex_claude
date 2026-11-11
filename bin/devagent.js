@@ -99,13 +99,17 @@ async function main() {
       core.apply(dir, core.setKey(cfg, pos[1], pos[2]));
       return console.log(`${pos[1]} = ${pos[2]} 적용됨`);
     }
-    case "models":
-      console.log("Claude(개발) developer.model:", core.MODEL_HINTS.developer.join(", "));
-      console.log("Codex(기획) planner.model:   ", core.MODEL_HINTS.planner.join(", "));
-      console.log("Codex 추론 planner.reasoning:", core.MODEL_HINTS.reasoning.join(", "));
+    case "models": {
+      const M = require("../src/models");
+      console.log("Claude(개발) developer.model:");
+      for (const m of M.CLAUDE_MODELS) console.log(`  ${m.id.padEnd(20)} ${m.label}`);
+      const cx = M.codexModels(dir);
+      console.log(`\nCodex(기획) planner.model ${cx.source === "fallback" ? "(codex 목록을 가져오지 못함)" : ""}:`);
+      for (const m of cx.models) console.log(`  ${(m.id || '""').padEnd(20)} ${m.label}\n${"".padEnd(23)}추론: ${m.levels.join(", ")} (기본 ${m.defaultLevel})`);
       console.log("\n플랫폼 platform:");
       for (const [k, p] of Object.entries(core.PLATFORMS)) console.log(`  ${k.padEnd(13)} ${p.label}`);
       return;
+    }
     case "login": core.login(dir); return;
     case "repo": core.repo(dir); return;
     case "start": process.exitCode = core.start(dir, { prompt: pos[1] }); return;

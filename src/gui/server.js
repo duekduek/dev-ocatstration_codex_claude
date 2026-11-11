@@ -37,6 +37,40 @@ function serve({ dir, port }) {
             platforms: Object.fromEntries(Object.entries(core.PLATFORMS).map(([k, p]) => [k, p.label])),
             hints: core.MODEL_HINTS, defaults: core.DEFAULT_CONFIG,
           });
+        case "/api/models": {
+          const M = require("../models");
+          return send(res, 200, { claude: M.CLAUDE_MODELS, codex: M.codexModels(d) });
+        }
+        case "/api/docs": {
+          // 요구사항 명세 + docs/ 아래 md 파일 목록
+          const cfg = core.loadConfig(d);
+          const spec = (cfg && cfg.specFile) || core.DEFAULT_CONFIG.specFile;
+          const list = [];
+          const walk = (rel) => {
+            const abs = path.join(d, rel);
+            if (!fs.existsSync(abs)) return;
+            for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+              const r = path.posix.join(rel, e.name);
+              if (e.isDirectory()) walk(r);
+              else if (e.name.toLowerCase().endsWith(".md")) list.push({ path: r, mtime: fs.statSync(path.join(d, r)).mtimeMs });
+            }
+          };
+          walk("docs");
+          if (!list.some((x) => x.path === spec)) list.push({ path: spec, mtime: 0, missing: !fs.existsSync(path.join(d, spec)) });
+          return send(res, 200, { spec, plan: "docs/PLAN.md", files: list });
+        }
+        case "/api/doc": {
+          const rel = String(q.path || "").replace(/\\/g, "/");
+          const abs = path.resolve(d, rel);
+          // 프로젝트 폴더 안의 .md 파일만 허용
+          if (!rel || !abs.startsWith(d + path.sep) || !abs.toLowerCase().endsWith(".md")) return send(res, 400, { error: "허용되지 않는 경로" });
+          if (req.method === "POST") {
+            fs.mkdirSync(path.dirname(abs), { recursive: true });
+            fs.writeFileSync(abs, String(q.content ?? ""));
+            return send(res, 200, { ok: true });
+          }
+          return send(res, 200, { path: rel, exists: fs.existsSync(abs), content: fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : "" });
+        }
         case "/api/project": {
           const cfg = core.loadConfig(d);
           const s = core.status(d);

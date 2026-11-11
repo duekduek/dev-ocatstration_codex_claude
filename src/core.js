@@ -10,10 +10,10 @@ const CONFIG_FILE = "devagent.config.json";
 const COAUTHOR = "Co-Authored-By: devagent (Codex + Claude)";
 
 const MODEL_HINTS = {
-  developer: ["sonnet", "opus", "haiku", "(전체 모델 ID도 가능, 예: claude-sonnet-5-5)"],
-  // 예시 값. 실제 사용 가능한 이름은 컨테이너에서 codex 실행 후 /model 로 확인
-  planner: ["(빈 값 = Codex 기본 모델)", "gpt-5.5", "gpt-5.5-codex", "o3"],
-  reasoning: ["low", "medium", "high", "xhigh"],
+  developer: ["sonnet", "opus", "haiku", "fable", "(전체 모델 ID도 가능, 예: claude-sonnet-5-5)"],
+  // 실제 목록은 'devagent models' (codex debug models) 로 확인
+  planner: ["(빈 값 = Codex 기본 모델)"],
+  reasoning: ["low", "medium", "high", "xhigh", "max", "ultra"],
 };
 
 // ---------- 설정 ----------

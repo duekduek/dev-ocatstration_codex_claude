@@ -7,43 +7,90 @@
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #66707c; --line: #e2e5ea;
-    --accent: #3b5bdb; --accent-text: #fff; --ok: #2b8a3e; --bad: #c92a2a; --code: #f1f3f5;
+    --accent: #3b5bdb; --accent-soft: #edf2ff; --accent-text: #fff; --ok: #2b8a3e; --bad: #c92a2a; --code: #f1f3f5;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #14161a; --card: #1d2026; --text: #e7e9ec; --muted: #9aa3ad; --line: #2c3038;
-      --accent: #5c7cfa; --ok: #51cf66; --bad: #ff6b6b; --code: #23272e; }
+      --accent: #5c7cfa; --accent-soft: #232a45; --ok: #51cf66; --bad: #ff6b6b; --code: #23272e; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
-  main { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .card > h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .card > h2 .right { margin-left: auto; display: flex; gap: 6px; }
   .row { display: flex; gap: 8px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+  .models { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
+  .model-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .model-box h3 { margin: 0 0 8px; font-size: 13px; }
+  .model-box .desc { color: var(--muted); font-size: 12px; margin: 6px 0 0; min-height: 1.5em; }
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  input, select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.small { padding: 3px 10px; font-size: 12px; }
   button:disabled { opacity: .5; cursor: default; }
   .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
   .actions button { text-align: left; padding: 10px 12px; }
   .actions small { display: block; color: var(--muted); font-size: 12px; }
-  .status { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; }
+  .status { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; margin: 0; }
   .status dt { color: var(--muted); }
   .status dd { margin: 0; word-break: break-all; }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
-  pre { background: var(--code); border-radius: 6px; padding: 10px; margin: 0; max-height: 220px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  pre.log { background: var(--code); border-radius: 6px; padding: 10px; margin: 0; max-height: 200px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
   .check { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
   .check input { width: auto; }
-  @media (max-width: 520px) { .row { flex-direction: column; } .status { grid-template-columns: 1fr; } .status dd { margin-bottom: 6px; } }
+
+  /* 문서 */
+  .docs { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 420px; }
+  .files { border-right: 1px solid var(--line); padding-right: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .files button { border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .files button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .files .tag { font-size: 11px; color: var(--muted); display: block; font-weight: 400; }
+  .files .group { font-size: 11px; color: var(--muted); margin: 10px 8px 2px; }
+  .viewer-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .viewer-bar .path { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); margin-right: auto; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 4px 12px; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  textarea#editor { min-height: 460px; font: 13px/1.6 ui-monospace, Consolas, "D2Coding", monospace; resize: vertical; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .md { overflow-wrap: anywhere; max-height: 640px; overflow: auto; padding-right: 6px; }
+  .md h1, .md h2, .md h3, .md h4 { line-height: 1.3; margin: 1.2em 0 .5em; }
+  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; border-bottom: 1px solid var(--line); padding-bottom: 4px; } .md h3 { font-size: 15px; } .md h4 { font-size: 14px; }
+  .md :first-child { margin-top: 0; }
+  .md p { margin: .5em 0; }
+  .md code { background: var(--code); padding: 1px 5px; border-radius: 4px; font: 12.5px ui-monospace, Consolas, monospace; }
+  .md pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md table { border-collapse: collapse; margin: .6em 0; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; vertical-align: top; }
+  .md th { background: var(--code); }
+  .md blockquote { margin: .6em 0; padding: 2px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+  .md ul, .md ol { padding-left: 1.4em; margin: .4em 0; }
+  .md li.task { list-style: none; margin-left: -1.3em; }
+  .md li.task input { width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: middle; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
+  .progress { height: 6px; background: var(--code); border-radius: 3px; overflow: hidden; margin: 2px 0 10px; }
+  .progress span { display: block; height: 100%; background: var(--ok); }
+
+  @media (max-width: 760px) {
+    .models { grid-template-columns: 1fr; }
+    .docs { grid-template-columns: 1fr; }
+    .files { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; flex-direction: row; flex-wrap: wrap; }
+    .files .group { display: none; }
+    .row { flex-direction: column; }
+    .status { grid-template-columns: 1fr; } .status dd { margin-bottom: 6px; }
+  }
 </style>
 </head>
 <body>
 <main>
   <h1>devagent</h1>
-  <p class="sub">Codex가 기획·검토하고 Claude가 개발합니다. Docker 컨테이너 안에서만 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
+  <p class="sub">요구사항(md)을 쓰면 Codex가 분석해서 계획을 세우고, Claude가 phase별로 개발합니다. 모든 작업은 Docker 안에서 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
 
   <section class="card">
     <h2>프로젝트 폴더</h2>
@@ -54,13 +101,28 @@
   </section>
 
   <section class="card">
+    <h2>모델</h2>
+    <div class="models">
+      <div class="model-box">
+        <h3>Codex · 기획/검토</h3>
+        <label for="plannerModel">모델 <span id="codexSrc"></span></label>
+        <select id="plannerModel"></select>
+        <label for="reasoning" style="margin-top:8px">추론 강도</label>
+        <select id="reasoning"></select>
+        <p class="desc" id="plannerDesc"></p>
+      </div>
+      <div class="model-box">
+        <h3>Claude · 개발</h3>
+        <label for="devModel">모델</label>
+        <select id="devModel"></select>
+        <p class="desc">별칭(sonnet/opus 등)은 항상 최신 버전, 전체 이름은 버전이 고정됩니다. Pro 요금제는 Opus 사용량 한도가 빨리 찹니다.</p>
+      </div>
+    </div>
+
     <h2>설정</h2>
     <div class="grid">
       <div><label for="name">프로젝트 이름 (저장소 이름)</label><input id="name"></div>
       <div><label for="platform">플랫폼</label><select id="platform"></select></div>
-      <div><label for="plannerModel">Codex 모델 (기획/검토, 비우면 기본값)</label><input id="plannerModel" list="plannerList"><datalist id="plannerList"></datalist></div>
-      <div><label for="reasoning">Codex 추론 강도</label><select id="reasoning"></select></div>
-      <div><label for="devModel">Claude 모델 (개발)</label><input id="devModel" list="devList"><datalist id="devList"></datalist></div>
       <div><label for="visibility">GitHub 저장소</label><select id="visibility"><option value="private">private</option><option value="public">public</option></select></div>
       <div><label for="pushOn">phase 완료 시</label><select id="pushOn"><option value="phase">커밋 + push</option><option value="never">커밋만</option></select></div>
       <div><label for="specFile">요구사항 명세 파일</label><input id="specFile"></div>
@@ -72,24 +134,41 @@
   </section>
 
   <section class="card">
+    <h2>문서 <span class="right"><button class="small" id="docsRefresh">새로고침</button></span></h2>
+    <div class="docs">
+      <nav class="files" id="files"></nav>
+      <div>
+        <div class="viewer-bar">
+          <span class="path" id="docPath"></span>
+          <div class="seg"><button id="modeView" class="on">보기</button><button id="modeEdit">편집</button></div>
+          <button class="small primary" id="docSave" hidden>저장</button>
+        </div>
+        <div id="progress"></div>
+        <div class="md" id="docView"><p class="empty">문서를 선택하세요</p></div>
+        <textarea id="editor" hidden spellcheck="false"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>실행</h2>
     <div class="actions">
       <button data-act="login">1. 로그인<small>이미지 빌드 + Claude/Codex/GitHub</small></button>
       <button data-act="repo">2. 저장소 만들기<small>GitHub 생성 + 첫 커밋</small></button>
-      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">Codex 실행 (이어하기 포함)</small></button>
+      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">Codex가 요구사항 분석부터 (이어하기 포함)</small></button>
       <button data-act="shell">컨테이너 셸<small>직접 명령 실행</small></button>
     </div>
-    <p class="sub" style="margin:10px 0 0;font-size:12px">로그인과 개발은 대화형이라 새 터미널 창에서 열립니다.</p>
+    <p class="sub" style="margin:10px 0 0;font-size:12px">로그인과 개발은 대화형이라 새 터미널 창에서 열립니다. 진행 중 생성되는 계획/보고서/리뷰는 위 문서에서 볼 수 있습니다.</p>
   </section>
 
   <section class="card">
-    <h2>상태 <button id="refresh" style="float:right;padding:2px 10px;font-size:12px">새로고침</button></h2>
+    <h2>상태 <span class="right"><button class="small" id="refresh">새로고침</button></span></h2>
     <dl class="status" id="status"><dt>상태</dt><dd>불러오는 중…</dd></dl>
   </section>
 
   <section class="card">
     <h2>로그</h2>
-    <pre id="log"></pre>
+    <pre class="log" id="log"></pre>
   </section>
 </main>
 <script>
@@ -101,59 +180,211 @@ const api = async (p, body) => {
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
 const dir = () => $("dir").value.trim();
-let meta;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let meta, models = { claude: [], codex: { models: [] } }, cfgCache = null;
 
+// ---------- 마크다운 렌더러 (간단) ----------
+function inline(s) {
+  const codes = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  s = esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i])}</code>`);
+}
+function md(src) {
+  const L = src.replace(/\r\n?/g, "\n").split("\n");
+  let out = "", i = 0;
+  const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  while (i < L.length) {
+    const l = L[i];
+    if (/^```/.test(l)) {
+      const buf = []; i++;
+      while (i < L.length && !/^```/.test(L[i])) buf.push(L[i++]);
+      i++; out += `<pre><code>${esc(buf.join("\n"))}</code></pre>`; continue;
+    }
+    if (/^\s*$/.test(l)) { i++; continue; }
+    let m;
+    if ((m = l.match(/^(#{1,6})\s+(.*)$/))) { const n = Math.min(m[1].length, 4); out += `<h${n}>${inline(m[2])}</h${n}>`; i++; continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(l)) { out += "<hr>"; i++; continue; }
+    if (l.includes("|") && i + 1 < L.length && isTableSep(L[i + 1])) {
+      const head = cells(l); i += 2;
+      let t = "<table><thead><tr>" + head.map((c) => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+      while (i < L.length && L[i].includes("|") && L[i].trim()) { t += "<tr>" + cells(L[i]).map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>"; i++; }
+      out += t + "</tbody></table>"; continue;
+    }
+    if (/^>\s?/.test(l)) {
+      const buf = []; while (i < L.length && /^>\s?/.test(L[i])) buf.push(L[i++].replace(/^>\s?/, ""));
+      out += `<blockquote>${md(buf.join("\n"))}</blockquote>`; continue;
+    }
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) {
+      const ordered = /^\s*\d/.test(l); let t = ordered ? "<ol>" : "<ul>";
+      while (i < L.length && /^\s*([-*+]|\d+[.)])\s+/.test(L[i])) {
+        let item = L[i].replace(/^\s*([-*+]|\d+[.)])\s+/, ""); const depth = (L[i].match(/^\s*/)[0].length >= 2) ? ' style="margin-left:1.2em"' : "";
+        i++;
+        while (i < L.length && /^\s{2,}\S/.test(L[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(L[i])) item += " " + L[i++].trim();
+        const task = item.match(/^\[([ xX])\]\s+(.*)$/);
+        t += task ? `<li class="task"${depth}><input type="checkbox" disabled ${task[1] !== " " ? "checked" : ""}> ${inline(task[2])}</li>` : `<li${depth}>${inline(item)}</li>`;
+      }
+      out += t + (ordered ? "</ol>" : "</ul>"); continue;
+    }
+    const buf = [];
+    while (i < L.length && L[i].trim() && !/^(#{1,6}\s|```|>|\s*([-*+]|\d+[.)])\s+)/.test(L[i]) && !(L[i].includes("|") && isTableSep(L[i + 1] || ""))) buf.push(L[i++]);
+    out += `<p>${buf.map(inline).join("<br>")}</p>`;
+  }
+  return out;
+}
+
+// ---------- 모델 ----------
+function fillCodexLevels(keep) {
+  const m = models.codex.models.find((x) => x.id === $("plannerModel").value) || models.codex.models[0];
+  const sel = $("reasoning"), cur = keep || sel.value;
+  sel.innerHTML = "";
+  for (const v of (m ? m.levels : meta.hints.reasoning)) sel.add(new Option(v, v));
+  sel.value = m && m.levels.includes(cur) ? cur : (m ? m.defaultLevel : "high");
+  $("plannerDesc").textContent = m ? m.label : "";
+}
+function setSelect(sel, value, label) {
+  if (![...sel.options].some((o) => o.value === value)) sel.add(new Option(label || `${value} (직접 지정)`, value));
+  sel.value = value;
+}
+async function loadModels() {
+  $("codexSrc").textContent = "(불러오는 중…)";
+  try { models = await api("/api/models?dir=" + encodeURIComponent(dir())); } catch (e) { log("모델 목록 오류: " + e.message); }
+  $("codexSrc").textContent = models.codex.source === "codex" ? "" : "(Codex 목록을 못 가져와 기본값만 표시)";
+  const p = $("plannerModel"); p.innerHTML = "";
+  for (const m of models.codex.models) p.add(new Option(m.id ? `${m.id}` : m.label, m.id));
+  const d = $("devModel"); d.innerHTML = "";
+  for (const m of models.claude) d.add(new Option(m.label, m.id));
+  applyModelValues(cfgCache || meta.defaults);
+}
+function applyModelValues(c) {
+  if (!$("plannerModel").options.length) return;
+  setSelect($("plannerModel"), c.planner.model || "");
+  fillCodexLevels(c.planner.reasoning);
+  setSelect($("devModel"), c.developer.model || "sonnet");
+}
+$("plannerModel").onchange = () => fillCodexLevels();
+
+// ---------- 설정 ----------
 function fill(cfg) {
   const c = cfg || meta.defaults;
   $("name").value = c.name || dir().split(/[\\/]/).filter(Boolean).pop() || "";
-  $("platform").value = c.platform; $("plannerModel").value = c.planner.model; $("reasoning").value = c.planner.reasoning;
-  $("devModel").value = c.developer.model; $("visibility").value = c.git.visibility; $("pushOn").value = c.git.pushOn;
+  $("platform").value = c.platform; $("visibility").value = c.git.visibility; $("pushOn").value = c.git.pushOn;
   $("buildCheck").checked = c.git.buildCheck; $("specFile").value = c.specFile;
+  applyModelValues(c);
 }
 function readForm() {
   return { name: $("name").value.trim(), platform: $("platform").value, specFile: $("specFile").value.trim(),
-    planner: { model: $("plannerModel").value.trim(), reasoning: $("reasoning").value },
-    developer: { model: $("devModel").value.trim() },
+    planner: { model: $("plannerModel").value, reasoning: $("reasoning").value },
+    developer: { model: $("devModel").value },
     git: { visibility: $("visibility").value, pushOn: $("pushOn").value, buildCheck: $("buildCheck").checked } };
 }
 const mark = (v) => v === undefined ? "-" : v ? '<span class="ok">O</span>' : '<span class="bad">X</span>';
 async function load() {
   try { localStorage.setItem("devagent.dir", dir()); } catch {}
   $("status").innerHTML = "<dt>상태</dt><dd>불러오는 중…</dd>";
+  loadDocs();
   try {
     const p = await api("/api/project?dir=" + encodeURIComponent(dir()));
-    fill(p.config);
+    cfgCache = p.config; fill(p.config);
     const L = p.login;
     $("status").innerHTML = `
       <dt>설정</dt><dd>${p.config ? "있음" : '<span class="bad">없음 — 설정 저장 필요</span>'}</dd>
       <dt>Docker</dt><dd>${p.docker ? '<span class="ok">실행 중</span>' : '<span class="bad">꺼짐 — Docker Desktop 실행</span>'}</dd>
       <dt>로그인</dt><dd>${L ? `Claude ${mark(L.claude)} · Codex ${mark(L.codex)} · GitHub ${mark(L.gh)}` : "확인 불가 (이미지 없음 — 1. 로그인)"}</dd>
-      <dt>원격 저장소</dt><dd>${p.remote ? `<a href="${p.remote.replace(/\.git$/, "")}" target="_blank" rel="noopener">${p.remote}</a>` : "없음"}</dd>
-      <dt>최근 커밋</dt><dd>${p.lastCommit || "없음"}</dd>`;
-  } catch (e) { $("status").innerHTML = `<dt>오류</dt><dd class="bad">${e.message}</dd>`; }
+      <dt>원격 저장소</dt><dd>${p.remote ? `<a href="${esc(p.remote.replace(/\.git$/, ""))}" target="_blank" rel="noopener">${esc(p.remote)}</a>` : "없음"}</dd>
+      <dt>최근 커밋</dt><dd>${esc(p.lastCommit || "없음")}</dd>`;
+  } catch (e) { $("status").innerHTML = `<dt>오류</dt><dd class="bad">${esc(e.message)}</dd>`; }
 }
 
+// ---------- 문서 ----------
+let docs = { files: [] }, current = null, mode = "view", dirty = false;
+const docLabel = (f) => f.path === docs.spec ? ["요구사항 명세", "직접 작성"] : f.path === docs.plan ? ["개발 계획", "Codex 분석 결과"]
+  : /reports\//.test(f.path) ? [f.path.split("/").pop(), "Claude 보고서"] : /reviews\//.test(f.path) ? [f.path.split("/").pop(), "Codex 리뷰"] : [f.path.replace(/^docs\//, ""), ""];
+async function loadDocs() {
+  try { docs = await api("/api/docs?dir=" + encodeURIComponent(dir())); } catch (e) { $("files").innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
+  const order = (f) => f.path === docs.spec ? 0 : f.path === docs.plan ? 1 : /reports\//.test(f.path) ? 3 : /reviews\//.test(f.path) ? 4 : 2;
+  const files = [...docs.files];
+  if (!files.some((f) => f.path === docs.plan)) files.push({ path: docs.plan, missing: true });
+  files.sort((a, b) => order(a) - order(b) || a.path.localeCompare(b.path, undefined, { numeric: true }));
+  const nav = $("files"); nav.innerHTML = "";
+  let lastGroup = -1;
+  const groups = ["", "", "기타 문서", "개발 보고서 (Claude)", "리뷰 (Codex)"];
+  for (const f of files) {
+    const g = order(f);
+    if (g >= 2 && g !== lastGroup) { const h = document.createElement("div"); h.className = "group"; h.textContent = groups[g]; nav.append(h); }
+    lastGroup = g;
+    const [title, tag] = docLabel(f);
+    const b = document.createElement("button");
+    b.innerHTML = `${esc(title)}<span class="tag">${esc(tag)}${f.missing ? " · 아직 없음" : ""}</span>`;
+    b.title = f.path; b.dataset.path = f.path;
+    b.onclick = () => openDoc(f.path);
+    nav.append(b);
+  }
+  openDoc(current && files.some((f) => f.path === current) ? current : docs.spec, true);
+}
+async function openDoc(p, keepMode) {
+  if (dirty && p !== current && !confirm("저장하지 않은 변경이 있습니다. 버리고 이동할까요?")) return;
+  current = p; dirty = false;
+  document.querySelectorAll("#files button").forEach((b) => b.classList.toggle("on", b.dataset.path === p));
+  $("docPath").textContent = p;
+  const d = await api(`/api/doc?dir=${encodeURIComponent(dir())}&path=${encodeURIComponent(p)}`);
+  $("editor").value = d.content;
+  if (!d.exists) {
+    $("docView").innerHTML = p === docs.plan
+      ? '<p class="empty">아직 계획이 없습니다.<br>요구사항 명세를 작성한 뒤 <b>3. 개발 시작</b>을 누르면 Codex가 분석해서 이곳에 계획을 만듭니다.</p>'
+      : '<p class="empty">파일이 없습니다. <b>편집</b>을 눌러 작성하세요.</p>';
+  } else renderDoc();
+  setMode(keepMode ? mode : (d.exists ? "view" : (p === docs.plan ? "view" : "edit")));
+}
+function renderDoc() {
+  const text = $("editor").value;
+  $("docView").innerHTML = text.trim() ? md(text) : '<p class="empty">내용이 비어 있습니다</p>';
+  const all = (text.match(/^\s*[-*]\s+\[[ xX]\]/gm) || []).length, done = (text.match(/^\s*[-*]\s+\[[xX]\]/gm) || []).length;
+  $("progress").innerHTML = current === docs.plan && all ? `<label>진행률 ${done}/${all} phase</label><div class="progress"><span style="width:${Math.round(done / all * 100)}%"></span></div>` : "";
+}
+function setMode(m) {
+  mode = m;
+  $("modeView").classList.toggle("on", m === "view"); $("modeEdit").classList.toggle("on", m === "edit");
+  $("docView").hidden = m !== "view"; $("editor").hidden = m !== "edit"; $("docSave").hidden = m !== "edit";
+  if (m === "view" && $("editor").value) renderDoc();
+}
+$("modeView").onclick = () => setMode("view");
+$("modeEdit").onclick = () => setMode("edit");
+$("editor").oninput = () => { dirty = true; };
+$("editor").onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); $("docSave").click(); } };
+$("docSave").onclick = async () => {
+  try { await api("/api/doc", { dir: dir(), path: current, content: $("editor").value }); dirty = false; log(`${current} 저장됨`); renderDoc(); loadDocs(); }
+  catch (e) { log("오류: " + e.message); }
+};
+$("docsRefresh").onclick = () => loadDocs();
+window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+// ---------- 시작 ----------
 (async () => {
   meta = await api("/api/meta");
-  for (const [k, v] of Object.entries(meta.platforms)) $("platform").add(new Option(`${v}`, k));
-  for (const v of meta.hints.reasoning) $("reasoning").add(new Option(v, v));
-  for (const v of meta.hints.planner.slice(1)) $("plannerList").append(new Option(v));
-  for (const v of meta.hints.developer.slice(0, 3)) $("devList").append(new Option(v));
+  for (const [k, v] of Object.entries(meta.platforms)) $("platform").add(new Option(v, k));
   let saved = ""; try { saved = localStorage.getItem("devagent.dir") || ""; } catch {}
   $("dir").value = saved || "__DIR__";
   fill(null);
   load();
+  loadModels();
 })();
 
-$("load").onclick = load;
+$("load").onclick = () => { load(); };
 $("refresh").onclick = load;
 $("save").onclick = async () => {
   $("save").disabled = true;
-  try { const r = await api("/api/save", { dir: dir(), config: readForm() }); log(r.log.join("\n")); log("저장 완료"); load(); }
+  try { const r = await api("/api/save", { dir: dir(), config: readForm() }); cfgCache = r.config; log(r.log.join("\n")); log("저장 완료"); load(); }
   catch (e) { log("오류: " + e.message); }
   $("save").disabled = false;
 };
 document.querySelectorAll("[data-act]").forEach((b) => b.onclick = async () => {
+  if (b.dataset.act === "start" && dirty) { alert("요구사항 문서를 먼저 저장하세요."); return; }
   try { await api("/api/terminal", { dir: dir(), action: b.dataset.act }); log(`${b.dataset.act}: 새 터미널 창에서 실행됨`); }
   catch (e) { log("오류: " + e.message); }
 });
