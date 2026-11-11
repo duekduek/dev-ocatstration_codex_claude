@@ -39,7 +39,11 @@ function serve({ dir, port }) {
           });
         case "/api/models": {
           const M = require("../models");
-          return send(res, 200, { claude: M.CLAUDE_MODELS, codex: M.codexModels(d) });
+          return send(res, 200, M.modelsFor(q.tool === "claude" ? "claude" : "codex", d, { refresh: q.refresh === "1" }));
+        }
+        case "/api/verify-model": {
+          const M = require("../models");
+          return send(res, 200, M.verifyModel(d, q.tool, q.model));
         }
         case "/api/docs": {
           // 요구사항 명세 + docs/ 아래 md 파일 목록

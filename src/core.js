@@ -3,7 +3,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync, spawn } = require("child_process");
-const { DEFAULT_CONFIG, files, slug } = require("./templates");
+const { DEFAULT_CONFIG, TOOLS, PLANNER_DOC, files, slug } = require("./templates");
 const { PLATFORMS } = require("./platforms");
 
 const CONFIG_FILE = "devagent.config.json";
@@ -35,6 +35,7 @@ function validate(cfg) {
   if (!["private", "public"].includes(cfg.git.visibility)) throw new Error("git.visibility는 private 또는 public");
   if (!["phase", "never"].includes(cfg.git.pushOn)) throw new Error("git.pushOn은 phase 또는 never");
   if (!cfg.name) throw new Error("name(프로젝트 이름)이 필요합니다");
+  for (const r of ["planner", "developer"]) if (!TOOLS[cfg[r].tool]) throw new Error(`${r}.tool은 ${Object.keys(TOOLS).join(" 또는 ")}`);
   return cfg;
 }
 function setKey(cfg, key, value) {
@@ -164,16 +165,24 @@ function repo(dir, log = console.log) {
   return remote;
 }
 
-function codexArgs(cfg, prompt) {
-  const a = ["codex", "--dangerously-bypass-approvals-and-sandbox"];
-  if (cfg.planner.model) a.push("-m", cfg.planner.model);
-  if (cfg.planner.reasoning) a.push("-c", `model_reasoning_effort="${cfg.planner.reasoning}"`);
+// 기획 담당을 대화형으로 시작하는 명령 (도구별)
+function plannerArgs(cfg, prompt) {
+  const p = cfg.planner;
+  let a;
+  if (p.tool === "claude") {
+    a = ["claude", "--permission-mode", "bypassPermissions"];
+    if (p.model) a.push("--model", p.model);
+  } else {
+    a = ["codex", "--dangerously-bypass-approvals-and-sandbox"];
+    if (p.model) a.push("-m", p.model);
+    if (p.reasoning) a.push("-c", `model_reasoning_effort="${p.reasoning}"`);
+  }
   if (prompt) a.push(prompt);
   return a;
 }
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-function startScript(cfg, prompt) { return codexArgs(cfg, prompt).map(shq).join(" "); }
-const DEFAULT_PROMPT = (cfg) => `${cfg.specFile} 요구사항으로 AGENTS.md 워크플로대로 개발 시작해. 이미 진행 중이면 PLAN.md를 읽고 이어서 진행해.`;
+function startScript(cfg, prompt) { return plannerArgs(cfg, prompt).map(shq).join(" "); }
+const DEFAULT_PROMPT = (cfg) => `너는 기획자/리뷰어다. ${PLANNER_DOC}를 읽고 그 워크플로대로 ${cfg.specFile} 요구사항 분석부터 시작해. 이미 진행 중이면 docs/PLAN.md를 읽고 이어서 진행해.`;
 
 // 컨테이너 안에서 Codex 실행 (대화형)
 function start(dir, { prompt, shell } = {}) {
@@ -211,6 +220,7 @@ function openTerminal(dir, args) {
 }
 
 module.exports = {
-  CONFIG_FILE, MODEL_HINTS, PLATFORMS, DEFAULT_CONFIG,
+  CONFIG_FILE, MODEL_HINTS, PLATFORMS, DEFAULT_CONFIG, TOOLS,
+  startScriptFor: (cfg, p) => startScript(cfg, p === undefined ? DEFAULT_PROMPT(cfg) : p),
   loadConfig, saveConfig, setKey, validate, init, apply, build, login, loginStatus, repo, start, status, openTerminal, dockerOk, DEFAULT_PROMPT,
 };

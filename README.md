@@ -1,6 +1,6 @@
 # dev-ocatstration_codex_claude (`devagent`)
 
-**Codex가 기획·리뷰하고 Claude가 개발하는** 멀티 에이전트 개발 환경을 프로젝트마다 한 번에 만들어 주는 CLI와 GUI입니다.
+**기획·리뷰 담당과 개발 담당 AI가 나눠 일하는** 멀티 에이전트 개발 환경을 프로젝트마다 한 번에 만들어 주는 CLI와 GUI입니다. 기본값은 기획·리뷰 Codex, 개발 Claude이며, 역할마다 Codex/Claude와 모델을 바꿀 수 있습니다.
 
 - 에이전트는 **Docker 컨테이너 안에서만** 실행됩니다. 컨테이너에는 프로젝트 폴더만 연결되므로 PC의 다른 파일은 건드리지 못합니다.
 - Codex가 요구사항을 phase 단위로 계획하고, phase마다 `claude -p`에 개발을 맡긴 뒤 결과를 검토합니다. Claude는 필요하면 서브 에이전트를 써서 병렬로 개발합니다.
@@ -51,6 +51,8 @@ GUI를 쓰려면 `devagent gui`를 실행하세요. `http://127.0.0.1:4317`에�
 devagent set developer.model opus
 devagent set planner.model gpt-5.5
 devagent set planner.reasoning xhigh
+devagent set planner.tool claude       # 기획도 Claude로
+devagent set developer.tool codex      # 개발을 Codex로
 ```
 
 ## 플랫폼
@@ -66,8 +68,8 @@ devagent set planner.reasoning xhigh
 
 ## 생성되는 파일
 - `.devcontainer/Dockerfile`, `docker-compose.yml`: 개발 컨테이너. 로그인 정보는 `devagent-*` 볼륨에 저장되어 모든 프로젝트가 공유합니다.
-- `AGENTS.md`: Codex에게 주는 지시입니다. 기획 → 개발 요청 → 검토 → 커밋·push 순서가 들어 있습니다.
-- `CLAUDE.md`: Claude에게 주는 지시입니다. 개발 규칙과 보고서 작성 방법이 들어 있습니다.
+- `docs/agents/PLANNER.md`, `docs/agents/DEVELOPER.md`: 기획 담당/개발 담당 역할 지시 (기획 → 개발 요청 → 검토 → 커밋·push)
+- `AGENTS.md`(Codex), `CLAUDE.md`(Claude): 각 도구가 맡은 역할 문서를 가리키는 안내
 - `.github/workflows/build-check.yml`: 플랫폼별 빌드 확인 워크플로입니다.
 - `docs/SPEC.md`: 요구사항 템플릿입니다. 이미 있는 파일은 덮어쓰지 않습니다.
 

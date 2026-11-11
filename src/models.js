@@ -33,20 +33,57 @@ function parseCatalog(text) {
   ];
 }
 
-// 호스트의 codex → (없으면) 컨테이너의 codex → 기본 목록
-function codexModels(dir) {
-  if (cache) return cache;
-  const tries = [
-    () => spawnSync("codex debug models", { shell: true, encoding: "utf8", timeout: 30000 }),
-    () => spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "codex", "debug", "models"], { cwd: dir, encoding: "utf8", timeout: 120000 }),
-  ];
-  for (const t of tries) {
+const fs = require("fs");
+const path = require("path");
+const hasProject = (dir) => fs.existsSync(path.join(dir, "docker-compose.yml"));
+const inContainer = (dir, args, timeout = 120000) =>
+  spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", ...args], { cwd: dir, encoding: "utf8", timeout });
+
+// 로그인된 계정 기준 Codex 모델 카탈로그
+// 컨테이너(개발에 실제로 쓰는 계정) → 호스트 codex → 기본 목록
+function codexModels(dir, { refresh } = {}) {
+  if (cache && !refresh) return cache;
+  const tries = [];
+  if (hasProject(dir)) tries.push(["container", () => inContainer(dir, ["codex", "debug", "models"])]);
+  tries.push(["host", () => spawnSync("codex debug models", { shell: true, encoding: "utf8", timeout: 30000 })]);
+  const errors = [];
+  for (const [where, t] of tries) {
     try {
       const r = t();
-      if (r.status === 0 && r.stdout.trim().startsWith("{")) return (cache = { source: "codex", models: parseCatalog(r.stdout) });
-    } catch {}
+      if (r.status === 0 && r.stdout.trim().startsWith("{")) return (cache = { source: where, models: parseCatalog(r.stdout) });
+      errors.push(`${where}: ${(r.stderr || r.error?.message || "실패").trim().split("\n").pop()}`);
+    } catch (e) { errors.push(`${where}: ${e.message}`); }
   }
-  return { source: "fallback", models: FALLBACK_CODEX };
+  return { source: "fallback", models: FALLBACK_CODEX, errors };
 }
 
-module.exports = { CLAUDE_MODELS, codexModels, DEFAULT_LEVELS };
+// 로그인된 계정으로 모델을 실제 호출해 사용 가능 여부 확인 (토큰 소량 사용)
+function verifyModel(dir, tool, model) {
+  if (!hasProject(dir)) return { ok: false, message: "devagent 설정이 없는 폴더입니다 (설정 저장 먼저)" };
+  if (!/^[\w.:-]*$/.test(model || "")) return { ok: false, message: "잘못된 모델 이름" };
+  if (tool === "claude") {
+    const args = ["claude", "-p", "Reply with just OK", "--output-format", "json", "--max-turns", "1"];
+    if (model) args.push("--model", model);
+    const r = inContainer(dir, args);
+    try {
+      const j = JSON.parse(r.stdout.trim().split("\n").filter((l) => l.startsWith("{")).pop());
+      const used = Object.keys(j.modelUsage || {});
+      return j.is_error ? { ok: false, message: j.result } : { ok: true, message: `사용 가능${used.length ? ` → 실제 모델: ${used.join(", ")}` : ""}` };
+    } catch { return { ok: false, message: (r.stderr || r.stdout || "응답 없음").trim().slice(-300) }; }
+  }
+  if (tool === "codex") {
+    const args = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "Reply with just OK"];
+    if (model) args.splice(2, 0, "-m", model);
+    const r = inContainer(dir, args);
+    return r.status === 0 ? { ok: true, message: "사용 가능" } : { ok: false, message: (r.stderr || r.stdout || "실패").trim().split("\n").slice(-3).join(" ").slice(-300) };
+  }
+  return { ok: false, message: "unknown tool" };
+}
+
+// 도구별 모델 목록 (GUI/CLI 공통 형식: {id, label, levels?, defaultLevel?})
+function modelsFor(tool, dir, opts) {
+  if (tool === "claude") return { source: "builtin", models: CLAUDE_MODELS };
+  return codexModels(dir, opts);
+}
+
+module.exports = { CLAUDE_MODELS, codexModels, modelsFor, verifyModel, DEFAULT_LEVELS };

@@ -27,6 +27,8 @@
   .model-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
   .model-box h3 { margin: 0 0 8px; font-size: 13px; }
   .model-box .desc { color: var(--muted); font-size: 12px; margin: 6px 0 0; min-height: 1.5em; }
+  .verify { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; font-size: 12px; }
+  .banner { position: sticky; top: 0; z-index: 5; background: var(--bad); color: #fff; padding: 10px 16px; text-align: center; font-weight: 600; }
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
   button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
@@ -88,9 +90,10 @@
 </style>
 </head>
 <body>
+<div class="banner" id="banner" hidden>GUI 서버에 연결할 수 없습니다. 터미널에서 <code>devagent gui</code>를 다시 실행한 뒤 이 페이지를 새로고침하세요.</div>
 <main>
   <h1>devagent</h1>
-  <p class="sub">요구사항(md)을 쓰면 Codex가 분석해서 계획을 세우고, Claude가 phase별로 개발합니다. 모든 작업은 Docker 안에서 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
+  <p class="sub">요구사항(md)을 쓰면 기획 담당(기본 Codex)이 분석해서 계획을 세우고, 개발 담당(기본 Claude)이 phase별로 개발합니다. 모든 작업은 Docker 안에서 실행되고, phase가 끝날 때마다 GitHub에 올라갑니다.</p>
 
   <section class="card">
     <h2>프로젝트 폴더</h2>
@@ -103,19 +106,25 @@
   <section class="card">
     <h2>모델</h2>
     <div class="models">
-      <div class="model-box">
-        <h3>Codex · 기획/검토</h3>
-        <label for="plannerModel">모델 <span id="codexSrc"></span></label>
+      <div class="model-box" data-role="planner">
+        <h3>기획/검토 담당</h3>
+        <label for="plannerTool">도구</label>
+        <select id="plannerTool"><option value="codex">Codex (기본)</option><option value="claude">Claude</option></select>
+        <label for="plannerModel" style="margin-top:8px">모델 <span id="plannerSrc"></span></label>
         <select id="plannerModel"></select>
-        <label for="reasoning" style="margin-top:8px">추론 강도</label>
-        <select id="reasoning"></select>
+        <div id="plannerReasoningBox"><label for="plannerReasoning" style="margin-top:8px">추론 강도</label><select id="plannerReasoning"></select></div>
         <p class="desc" id="plannerDesc"></p>
+        <div class="verify"><button class="small" data-reload="planner">목록 새로고침</button><button class="small" data-verify="planner">계정에서 확인</button><span id="plannerVerify"></span></div>
       </div>
-      <div class="model-box">
-        <h3>Claude · 개발</h3>
-        <label for="devModel">모델</label>
-        <select id="devModel"></select>
-        <p class="desc">별칭(sonnet/opus 등)은 항상 최신 버전, 전체 이름은 버전이 고정됩니다. Pro 요금제는 Opus 사용량 한도가 빨리 찹니다.</p>
+      <div class="model-box" data-role="developer">
+        <h3>개발 담당</h3>
+        <label for="developerTool">도구</label>
+        <select id="developerTool"><option value="claude">Claude (기본)</option><option value="codex">Codex</option></select>
+        <label for="developerModel" style="margin-top:8px">모델 <span id="developerSrc"></span></label>
+        <select id="developerModel"></select>
+        <div id="developerReasoningBox"><label for="developerReasoning" style="margin-top:8px">추론 강도</label><select id="developerReasoning"></select></div>
+        <p class="desc" id="developerDesc"></p>
+        <div class="verify"><button class="small" data-reload="developer">목록 새로고침</button><button class="small" data-verify="developer">계정에서 확인</button><span id="developerVerify"></span></div>
       </div>
     </div>
 
@@ -155,7 +164,7 @@
     <div class="actions">
       <button data-act="login">1. 로그인<small>이미지 빌드 + Claude/Codex/GitHub</small></button>
       <button data-act="repo">2. 저장소 만들기<small>GitHub 생성 + 첫 커밋</small></button>
-      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">Codex가 요구사항 분석부터 (이어하기 포함)</small></button>
+      <button data-act="start" class="primary">3. 개발 시작<small style="color:inherit;opacity:.8">요구사항 분석부터 (이어하기 포함)</small></button>
       <button data-act="shell">컨테이너 셸<small>직접 명령 실행</small></button>
     </div>
     <p class="sub" style="margin:10px 0 0;font-size:12px">로그인과 개발은 대화형이라 새 터미널 창에서 열립니다. 진행 중 생성되는 계획/보고서/리뷰는 위 문서에서 볼 수 있습니다.</p>
@@ -176,7 +185,12 @@ const TOKEN = "__TOKEN__";
 const $ = (id) => document.getElementById(id);
 const log = (m) => { const el = $("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; };
 const api = async (p, body) => {
-  const r = await fetch(p, { method: body ? "POST" : "GET", headers: { "x-devagent-token": TOKEN, "content-type": "application/json" }, body: body && JSON.stringify(body) });
+  let r;
+  try {
+    r = await fetch(p, { method: body ? "POST" : "GET", headers: { "x-devagent-token": TOKEN, "content-type": "application/json" }, body: body && JSON.stringify(body) });
+  } catch (e) { $("banner").hidden = false; throw new Error("GUI 서버에 연결할 수 없음"); }
+  $("banner").hidden = r.status !== 403 ? true : false;
+  if (r.status === 403) { $("banner").textContent = "GUI 서버가 다시 시작되었습니다. 이 페이지를 새로고침하세요."; $("banner").hidden = false; }
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
 const dir = () => $("dir").value.trim();
@@ -238,36 +252,71 @@ function md(src) {
   return out;
 }
 
-// ---------- 모델 ----------
-function fillCodexLevels(keep) {
-  const m = models.codex.models.find((x) => x.id === $("plannerModel").value) || models.codex.models[0];
-  const sel = $("reasoning"), cur = keep || sel.value;
+// ---------- 모델 (역할별: 도구 → 모델 → 추론 강도) ----------
+const ROLES = ["planner", "developer"];
+const listCache = {}; // tool → {source, models, errors}
+const SRC_LABEL = { container: "(컨테이너 로그인 계정 기준)", host: "(PC 로그인 계정 기준)", builtin: "", fallback: "(계정 목록을 못 가져옴 — 로그인 확인)" };
+const CLAUDE_NOTE = "Claude CLI는 모델 목록 기능이 없어 별칭/최신 모델을 표시합니다. 별칭은 계정에서 쓸 수 있는 최신 버전으로 연결됩니다. 계정에서 확인을 누르면 실제 호출로 확인합니다(토큰 소량).";
+
+async function fetchList(tool, refresh) {
+  if (listCache[tool] && !refresh) return listCache[tool];
+  const r = await api(`/api/models?dir=${encodeURIComponent(dir())}&tool=${tool}${refresh ? "&refresh=1" : ""}`);
+  if (r.errors) log(`${tool} 모델 목록 실패: ${r.errors.join(" / ")}`);
+  return (listCache[tool] = r);
+}
+function fillLevels(role, keep) {
+  const tool = $(role + "Tool").value, list = listCache[tool];
+  const box = $(role + "ReasoningBox"), sel = $(role + "Reasoning");
+  box.hidden = tool !== "codex";
+  const m = list && list.models.find((x) => x.id === $(role + "Model").value);
+  $(role + "Desc").textContent = tool === "claude" ? CLAUDE_NOTE : (m ? m.label : "");
+  if (tool !== "codex") return;
+  const levels = m && m.levels && m.levels.length ? m.levels : meta.hints.reasoning;
+  const cur = keep || sel.value;
   sel.innerHTML = "";
-  for (const v of (m ? m.levels : meta.hints.reasoning)) sel.add(new Option(v, v));
-  sel.value = m && m.levels.includes(cur) ? cur : (m ? m.defaultLevel : "high");
-  $("plannerDesc").textContent = m ? m.label : "";
+  for (const v of levels) sel.add(new Option(v, v));
+  sel.value = levels.includes(cur) ? cur : (m && m.defaultLevel) || "high";
 }
 function setSelect(sel, value, label) {
   if (![...sel.options].some((o) => o.value === value)) sel.add(new Option(label || `${value} (직접 지정)`, value));
   sel.value = value;
 }
-async function loadModels() {
-  $("codexSrc").textContent = "(불러오는 중…)";
-  try { models = await api("/api/models?dir=" + encodeURIComponent(dir())); } catch (e) { log("모델 목록 오류: " + e.message); }
-  $("codexSrc").textContent = models.codex.source === "codex" ? "" : "(Codex 목록을 못 가져와 기본값만 표시)";
-  const p = $("plannerModel"); p.innerHTML = "";
-  for (const m of models.codex.models) p.add(new Option(m.id ? `${m.id}` : m.label, m.id));
-  const d = $("devModel"); d.innerHTML = "";
-  for (const m of models.claude) d.add(new Option(m.label, m.id));
-  applyModelValues(cfgCache || meta.defaults);
+const loadSeq = {};
+async function loadRole(role, want, refresh) {
+  const seq = (loadSeq[role] = (loadSeq[role] || 0) + 1);
+  const tool = $(role + "Tool").value;
+  $(role + "Src").textContent = "(불러오는 중…)";
+  const sel = $(role + "Model");
+  let list;
+  try { list = await fetchList(tool, refresh); } catch (e) { $(role + "Src").textContent = ""; log("모델 목록 오류: " + e.message); return; }
+  if (loadSeq[role] !== seq) return; // 더 최근 요청이 있음
+  $(role + "Src").textContent = SRC_LABEL[list.source] || "";
+  sel.innerHTML = "";
+  for (const m of list.models) sel.add(new Option(tool === "claude" ? m.label : (m.id || m.label), m.id));
+  setSelect(sel, want ? want.model ?? "" : (tool === "claude" ? "sonnet" : ""));
+  fillLevels(role, want && want.reasoning);
+  $(role + "Verify").textContent = "";
 }
 function applyModelValues(c) {
-  if (!$("plannerModel").options.length) return;
-  setSelect($("plannerModel"), c.planner.model || "");
-  fillCodexLevels(c.planner.reasoning);
-  setSelect($("devModel"), c.developer.model || "sonnet");
+  for (const r of ROLES) { $(r + "Tool").value = c[r].tool || meta.defaults[r].tool; loadRole(r, c[r]); }
 }
-$("plannerModel").onchange = () => fillCodexLevels();
+for (const r of ROLES) {
+  $(r + "Tool").onchange = () => loadRole(r, null);
+  $(r + "Model").onchange = () => { fillLevels(r); $(r + "Verify").textContent = ""; };
+}
+document.querySelectorAll("[data-reload]").forEach((b) => b.onclick = () => {
+  const r = b.dataset.reload; loadRole(r, { model: $(r + "Model").value, reasoning: $(r + "Reasoning").value }, true);
+});
+document.querySelectorAll("[data-verify]").forEach((b) => b.onclick = async () => {
+  const role = b.dataset.verify, out = $(role + "Verify");
+  b.disabled = true; out.textContent = "확인 중… (최대 1~2분)"; out.className = "";
+  try {
+    const r = await api("/api/verify-model", { dir: dir(), tool: $(role + "Tool").value, model: $(role + "Model").value });
+    out.textContent = (r.ok ? "✓ " : "✗ ") + r.message; out.className = r.ok ? "ok" : "bad";
+  } catch (e) { out.textContent = "✗ " + e.message; out.className = "bad"; }
+  b.disabled = false;
+});
+const roleValue = (r) => ({ tool: $(r + "Tool").value, model: $(r + "Model").value, reasoning: $(r + "Tool").value === "codex" ? $(r + "Reasoning").value : (cfgCache && cfgCache[r].reasoning) || "high" });
 
 // ---------- 설정 ----------
 function fill(cfg) {
@@ -279,8 +328,8 @@ function fill(cfg) {
 }
 function readForm() {
   return { name: $("name").value.trim(), platform: $("platform").value, specFile: $("specFile").value.trim(),
-    planner: { model: $("plannerModel").value, reasoning: $("reasoning").value },
-    developer: { model: $("devModel").value },
+    planner: roleValue("planner"),
+    developer: roleValue("developer"),
     git: { visibility: $("visibility").value, pushOn: $("pushOn").value, buildCheck: $("buildCheck").checked } };
 }
 const mark = (v) => v === undefined ? "-" : v ? '<span class="ok">O</span>' : '<span class="bad">X</span>';
@@ -303,8 +352,8 @@ async function load() {
 
 // ---------- 문서 ----------
 let docs = { files: [] }, current = null, mode = "view", dirty = false;
-const docLabel = (f) => f.path === docs.spec ? ["요구사항 명세", "직접 작성"] : f.path === docs.plan ? ["개발 계획", "Codex 분석 결과"]
-  : /reports\//.test(f.path) ? [f.path.split("/").pop(), "Claude 보고서"] : /reviews\//.test(f.path) ? [f.path.split("/").pop(), "Codex 리뷰"] : [f.path.replace(/^docs\//, ""), ""];
+const docLabel = (f) => f.path === docs.spec ? ["요구사항 명세", "직접 작성"] : f.path === docs.plan ? ["개발 계획", "기획 담당 분석 결과"]
+  : /reports\//.test(f.path) ? [f.path.split("/").pop(), "개발 보고서"] : /reviews\//.test(f.path) ? [f.path.split("/").pop(), "리뷰"] : [f.path.replace(/^docs\//, ""), ""];
 async function loadDocs() {
   try { docs = await api("/api/docs?dir=" + encodeURIComponent(dir())); } catch (e) { $("files").innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
   const order = (f) => f.path === docs.spec ? 0 : f.path === docs.plan ? 1 : /reports\//.test(f.path) ? 3 : /reviews\//.test(f.path) ? 4 : 2;
@@ -313,7 +362,7 @@ async function loadDocs() {
   files.sort((a, b) => order(a) - order(b) || a.path.localeCompare(b.path, undefined, { numeric: true }));
   const nav = $("files"); nav.innerHTML = "";
   let lastGroup = -1;
-  const groups = ["", "", "기타 문서", "개발 보고서 (Claude)", "리뷰 (Codex)"];
+  const groups = ["", "", "기타 문서", "개발 보고서", "리뷰"];
   for (const f of files) {
     const g = order(f);
     if (g >= 2 && g !== lastGroup) { const h = document.createElement("div"); h.className = "group"; h.textContent = groups[g]; nav.append(h); }
@@ -336,7 +385,7 @@ async function openDoc(p, keepMode) {
   $("editor").value = d.content;
   if (!d.exists) {
     $("docView").innerHTML = p === docs.plan
-      ? '<p class="empty">아직 계획이 없습니다.<br>요구사항 명세를 작성한 뒤 <b>3. 개발 시작</b>을 누르면 Codex가 분석해서 이곳에 계획을 만듭니다.</p>'
+      ? '<p class="empty">아직 계획이 없습니다.<br>요구사항 명세를 작성한 뒤 <b>3. 개발 시작</b>을 누르면 기획 담당이 분석해서 이곳에 계획을 만듭니다.</p>'
       : '<p class="empty">파일이 없습니다. <b>편집</b>을 눌러 작성하세요.</p>';
   } else renderDoc();
   setMode(keepMode ? mode : (d.exists ? "view" : (p === docs.plan ? "view" : "edit")));
@@ -372,7 +421,6 @@ window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault()
   $("dir").value = saved || "__DIR__";
   fill(null);
   load();
-  loadModels();
 })();
 
 $("load").onclick = () => { load(); };

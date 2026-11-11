@@ -66,7 +66,8 @@ devagent doctor --json --dir <폴더>
 - 프로젝트 이름(= GitHub 저장소 이름, 기본: 폴더명)
 - 플랫폼: web, react-native, python, ios, android, flutter, go, java, rust
 - Codex(기획/검토) 모델 — 비우면 Codex 기본값. 추론 강도 low/medium/high/xhigh (기본 high)
-- Claude(개발) 모델 — sonnet(기본, 사용량 절약) / opus(고품질, Pro 요금제는 한도가 빨리 참) / haiku
+- 역할별 도구: 기획/검토 기본 codex, 개발 기본 claude (`--planner-tool`, `--dev-tool`로 바꿀 수 있음, 같은 도구로 둘 다 맡겨도 됨)
+- Claude 모델 — sonnet(기본, 사용량 절약) / opus(고품질, Pro 요금제는 한도가 빨리 참) / haiku
 - 저장소 private/public (기본 private), phase마다 push 여부, Actions 빌드 확인 여부
 - 요구사항 명세 파일 경로 (기본 docs/SPEC.md). 이미 명세 파일이 있으면 그 경로를 쓴다.
 

@@ -23,8 +23,9 @@ const HELP = `devagent - Codex(기획/리뷰) + Claude(개발) 멀티 에이전�
 
 init 옵션:
   --name <이름> --platform <${Object.keys(core.PLATFORMS).join("|")}>
-  --planner-model <codex 모델> --reasoning <low|medium|high|xhigh>
-  --dev-model <claude 모델> --visibility <private|public>
+  --planner-tool <codex|claude> (기본 codex)  --planner-model <모델> --reasoning <강도>
+  --dev-tool <claude|codex> (기본 claude)     --dev-model <모델> --dev-reasoning <강도>
+  --visibility <private|public>
   --push-on <phase|never> --no-build-check --spec <파일> --yes
 
 공통 옵션: --dir <프로젝트 폴더> (기본: 현재 폴더)
@@ -54,8 +55,8 @@ async function initCmd(dir, o) {
   const opts = {
     name: o.name || cur.name || path.basename(path.resolve(dir)),
     platform: o.platform || cur.platform,
-    planner: { model: o["planner-model"] ?? cur.planner.model, reasoning: o.reasoning || cur.planner.reasoning },
-    developer: { model: o["dev-model"] || cur.developer.model },
+    planner: { tool: o["planner-tool"] || cur.planner.tool, model: o["planner-model"] ?? cur.planner.model, reasoning: o.reasoning || cur.planner.reasoning },
+    developer: { tool: o["dev-tool"] || cur.developer.tool, model: o["dev-model"] ?? cur.developer.model, reasoning: o["dev-reasoning"] || cur.developer.reasoning },
     git: { visibility: o.visibility || cur.git.visibility, pushOn: o["push-on"] || cur.git.pushOn, buildCheck: o["no-build-check"] ? false : cur.git.buildCheck },
     specFile: o.spec || cur.specFile,
   };
@@ -65,10 +66,16 @@ async function initCmd(dir, o) {
     for (const [k, p] of Object.entries(core.PLATFORMS)) console.log(`  ${k.padEnd(13)} ${p.label}`);
     opts.name = await ask(rl, "\n프로젝트 이름", opts.name);
     opts.platform = await ask(rl, "플랫폼", opts.platform);
-    opts.planner.model = await ask(rl, "Codex(기획) 모델, 비우려면 '-'", opts.planner.model || "-", core.MODEL_HINTS.planner.slice(1));
-    if (opts.planner.model === "-") opts.planner.model = "";
-    opts.planner.reasoning = await ask(rl, "Codex 추론 강도", opts.planner.reasoning, core.MODEL_HINTS.reasoning);
-    opts.developer.model = await ask(rl, "Claude(개발) 모델", opts.developer.model, core.MODEL_HINTS.developer.slice(0, 3));
+    const M = require("../src/models");
+    for (const [role, label, prev] of [["planner", "기획/검토", cur.planner], ["developer", "개발", cur.developer]]) {
+      const r = opts[role];
+      r.tool = await ask(rl, `${label} 담당 도구`, r.tool, Object.keys(core.TOOLS));
+      if (r.tool !== prev.tool && !o[role === "planner" ? "planner-model" : "dev-model"]) r.model = r.tool === "claude" ? "sonnet" : "";
+      const list = M.modelsFor(r.tool, dir).models.map((m) => m.id).filter(Boolean).slice(0, 6);
+      r.model = await ask(rl, `${label} 모델 (${core.TOOLS[r.tool]}, 비우려면 '-')`, r.model || "-", list);
+      if (r.model === "-") r.model = "";
+      if (r.tool === "codex") r.reasoning = await ask(rl, `${label} 추론 강도`, r.reasoning, core.MODEL_HINTS.reasoning);
+    }
     opts.git.visibility = await ask(rl, "GitHub 저장소 공개 여부", opts.git.visibility, ["private", "public"]);
     opts.git.pushOn = await ask(rl, "phase 완료 시 push", opts.git.pushOn, ["phase", "never"]);
     opts.git.buildCheck = (await ask(rl, "GitHub Actions 빌드 확인", opts.git.buildCheck ? "y" : "n", ["y", "n"])) === "y";
@@ -81,7 +88,7 @@ async function initCmd(dir, o) {
   1. ${cfg.specFile} 에 요구사항 작성
   2. devagent login   (Docker 빌드 + 로그인)
   3. devagent repo    (GitHub ${cfg.git.visibility} 저장소 생성)
-  4. devagent start   (Codex가 기획 → Claude 개발 → 검토 → phase별 push)`);
+  4. devagent start   (${core.TOOLS[cfg.planner.tool]}가 기획 → ${core.TOOLS[cfg.developer.tool]} 개발 → 검토 → phase별 push)`);
 }
 
 async function main() {
@@ -119,7 +126,8 @@ async function main() {
       if (!s.config) return console.log("devagent 프로젝트가 아닙니다 (init 필요).");
       const c = s.config, L = s.login;
       console.log(`프로젝트  ${c.name} (${c.platform}) - ${s.dir}
-모델      Codex: ${c.planner.model || "기본"} (${c.planner.reasoning}) / Claude: ${c.developer.model}
+기획/검토 ${core.TOOLS[c.planner.tool]} ${c.planner.model || "(기본 모델)"}${c.planner.tool === "codex" ? ` [${c.planner.reasoning}]` : ""}
+개발      ${core.TOOLS[c.developer.tool]} ${c.developer.model || "(기본 모델)"}${c.developer.tool === "codex" ? ` [${c.developer.reasoning}]` : ""}
 Git       ${c.git.visibility}, push: ${c.git.pushOn}, 빌드확인: ${c.git.buildCheck ? "on" : "off"}
 원격      ${s.remote || "(없음 - devagent repo)"}
 최근커밋  ${s.lastCommit || "(없음)"}

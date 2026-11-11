@@ -1,11 +1,13 @@
 // 설정(config)으로부터 대상 프로젝트에 생성할 파일 내용을 만든다
 const { PLATFORMS, common } = require("./platforms");
 
+// 역할별 도구: 기본은 기획/검토=Codex, 개발=Claude. 둘 다 codex 또는 claude로 바꿀 수 있다.
+const TOOLS = { codex: "Codex", claude: "Claude" };
 const DEFAULT_CONFIG = {
   name: "",
   platform: "web",
-  planner: { model: "", reasoning: "high" },   // Codex (빈 값 = Codex 기본 모델)
-  developer: { model: "sonnet" },               // Claude (opus / sonnet / haiku / 전체 모델 ID)
+  planner: { tool: "codex", model: "", reasoning: "high" },     // model 빈 값 = 도구 기본 모델
+  developer: { tool: "claude", model: "sonnet", reasoning: "high" }, // reasoning은 codex일 때만 사용
   git: { visibility: "private", pushOn: "phase", buildCheck: true },
   maxReviewRounds: 3,
   specFile: "docs/SPEC.md",
@@ -26,9 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
 
 RUN npm install -g @anthropic-ai/claude-code @openai/codex
 ${p.docker.length ? "\n# 플랫폼: " + cfg.platform + "\n" + p.docker.join("\n") + "\n" : ""}
+
+# ~/.claude.json 은 볼륨 밖이라 컨테이너마다 사라짐 → 시작 시 Claude가 남긴 백업(볼륨 안)에서 복원
+RUN printf '%s\\n' '#!/bin/sh' \\
+      'if [ ! -f "$HOME/.claude.json" ]; then b=$(ls -t "$HOME"/.claude/backups/.claude.json.backup.* 2>/dev/null | head -1); [ -n "$b" ] && cp "$b" "$HOME/.claude.json"; fi' \\
+      'exec "$@"' > /usr/local/bin/devagent-entry && chmod +x /usr/local/bin/devagent-entry
+
 USER node
 RUN mkdir -p /home/node/.claude /home/node/.codex /home/node/.config/gh
 WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/devagent-entry"]
 CMD ["bash"]
 `;
 }
@@ -63,13 +72,28 @@ volumes:
 `;
 }
 
-function claudeCmd(cfg, task) {
-  const model = cfg.developer.model ? ` --model ${cfg.developer.model}` : "";
-  return `claude -p "${task}"${model} --permission-mode bypassPermissions`;
+// ---------- 역할별 명령 ----------
+const q = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
+
+// 개발 담당을 비대화형으로 호출하는 명령 (기획 담당이 셸에서 실행)
+function devCmd(cfg, task) {
+  const d = cfg.developer;
+  if (d.tool === "codex") {
+    const m = d.model ? ` -m ${d.model}` : "";
+    const r = d.reasoning ? ` -c model_reasoning_effort=${q(d.reasoning)}` : "";
+    return `codex exec${m}${r} --dangerously-bypass-approvals-and-sandbox ${q(task)}`;
+  }
+  const m = d.model ? ` --model ${d.model}` : "";
+  return `claude -p ${q(task)}${m} --permission-mode bypassPermissions`;
 }
 
-function agentsMd(cfg) {
+const PLANNER_DOC = "docs/agents/PLANNER.md";
+const DEVELOPER_DOC = "docs/agents/DEVELOPER.md";
+const DEV_PREFIX = `${DEVELOPER_DOC}의 개발자 규칙을 따라라.`;
+
+function plannerMd(cfg) {
   const p = PLATFORMS[cfg.platform];
+  const P = TOOLS[cfg.planner.tool], D = TOOLS[cfg.developer.tool];
   const push = cfg.git.pushOn !== "never";
   const ci = cfg.git.buildCheck && push;
   const step5 = push
@@ -81,14 +105,14 @@ function agentsMd(cfg) {
    \`\`\`
    - 커밋 전 \`git status\`로 비밀값(.env, 키 파일 등)이 포함되지 않았는지 확인한다.
 ${ci ? `   - push 후 GitHub Actions 빌드 결과를 확인한다 (\`gh run watch --exit-status\`, 실패 시 \`gh run view --log-failed\`).
-     실패하면 에러 로그를 \`docs/reviews/phase-N.md\`에 붙여 Claude에게 수정 요청 → 다시 커밋/푸시 → 빌드가 성공해야 phase 완료.
+     실패하면 에러 로그를 \`docs/reviews/phase-N.md\`에 붙여 개발 담당에게 수정 요청 → 다시 커밋/푸시 → 빌드가 성공해야 phase 완료.
 ` : ""}   - push가 실패하면(인증/원격 미설정 등) 커밋은 유지하고 사용자에게 알린다.`
     : `5. **커밋**: 통과하면 PLAN.md의 해당 phase를 \`- [x]\`로 바꾸고 \`git commit\`한다 (push는 하지 않는다).`;
 
   return `<!-- devagent 생성 파일 - 'devagent apply'로 다시 생성됨. 수정은 devagent.config.json에서 -->
-# 역할: 기획자 겸 리뷰어 (Codex)
+# 역할: 기획자 겸 리뷰어 (${P})
 
-너는 이 프로젝트의 기획자이자 리뷰어다. **코드를 직접 작성하지 않는다.** 구현은 셸에서 Claude Code CLI(\`claude -p\`)에게 맡긴다.
+너는 이 프로젝트의 기획자이자 리뷰어다. **코드를 직접 작성하지 않는다.** 구현은 셸에서 개발 담당(${D} CLI)을 호출해 맡긴다.
 
 - 프로젝트: ${cfg.name}
 - 플랫폼: ${p.label}
@@ -101,15 +125,15 @@ ${ci ? `   - push 후 GitHub Actions 빌드 결과를 확인한다 (\`gh run wat
    - 기술 스택, 폴더 구조, 데이터 모델
    - Phase 목록 (각 phase는 독립적으로 검증 가능한 단위, 체크박스 \`- [ ]\`), 각 phase의 완료 기준
    - 작성 후 사용자에게 계획 승인을 받는다.
-3. **개발 요청**: 아직 안 끝난 첫 phase를 Claude에게 맡긴다.
+3. **개발 요청**: 아직 안 끝난 첫 phase를 개발 담당에게 맡긴다.
    \`\`\`bash
-   ${claudeCmd(cfg, "docs/PLAN.md의 Phase N을 구현해. 완료 기준을 모두 충족시키고, 서로 독립적인 작업은 서브 에이전트를 여러 개 띄워 병렬로 진행해도 된다. 끝나면 docs/reports/phase-N.md에 구현 내용·변경 파일·실행/테스트 방법을 요약해.")}
+   ${devCmd(cfg, `${DEV_PREFIX} docs/PLAN.md의 Phase N을 구현해. 완료 기준을 모두 충족시키고, 끝나면 docs/reports/phase-N.md에 구현 내용·변경 파일·실행/테스트 방법을 요약해.`)}
    \`\`\`
 4. **검토**: 보고서와 실제 코드를 확인한다.${p.localCheck ? ` 직접 검증도 실행한다: \`${p.localCheck}\`` : ""}
    - 기준: 완료 기준 충족, 버그, 보안, 계획과의 일치
    - 문제가 있으면 \`docs/reviews/phase-N.md\`에 지적 사항을 쓰고 수정 요청:
      \`\`\`bash
-     ${claudeCmd(cfg, "docs/reviews/phase-N.md의 리뷰 지적 사항을 반영해 수정하고 docs/reports/phase-N.md를 갱신해.")}
+     ${devCmd(cfg, `${DEV_PREFIX} docs/reviews/phase-N.md의 리뷰 지적 사항을 반영해 수정하고 docs/reports/phase-N.md를 갱신해.`)}
      \`\`\`
    - 통과할 때까지 3~4단계를 반복한다.
 ${step5}
@@ -120,22 +144,41 @@ ${step5}
 - 이 작업은 Docker 컨테이너(\`/workspace\`) 안에서만 실행된다. 컨테이너 밖이면 진행하지 말고 사용자에게 알린다.
 - ${p.notes}
 - 사소한 취향 문제로 반려하지 않는다. 같은 지적이 ${cfg.maxReviewRounds}회 반복되면 사용자에게 판단을 묻는다.
-- \`claude\` 실행이 실패하면(사용 한도 초과 등) 진행 상황을 PLAN.md에 기록하고 멈춘 뒤 사용자에게 알린다.
+- 개발 담당 호출이 실패하면(사용 한도 초과 등) 진행 상황을 PLAN.md에 기록하고 멈춘 뒤 사용자에게 알린다.
 - 작업 재개 시에는 PLAN.md, docs/reviews, docs/reports를 읽고 이어서 진행한다.
 `;
 }
 
-function claudeMd(cfg) {
+function developerMd(cfg) {
   const p = PLATFORMS[cfg.platform];
+  const P = TOOLS[cfg.planner.tool], D = TOOLS[cfg.developer.tool];
+  const parallel = cfg.developer.tool === "claude"
+    ? "서로 독립적인 작업은 필요하면 서브 에이전트를 여러 개 띄워 병렬로 개발해도 된다. 같은 파일을 동시에 수정하지 않도록 나눈다."
+    : "작업을 작은 단위로 나눠 순서대로 구현하고, 단위마다 검증한다.";
   return `<!-- devagent 생성 파일 - 'devagent apply'로 다시 생성됨 -->
-# 역할: 개발자 (Claude)
+# 역할: 개발자 (${D})
 
-- 이 프로젝트의 기획/검토는 Codex가 맡는다. 계획은 \`docs/PLAN.md\`, 리뷰는 \`docs/reviews/\`에 있다.
+- 기획/검토는 ${P}가 맡는다. 계획은 \`docs/PLAN.md\`, 리뷰는 \`docs/reviews/\`에 있다.
 - 요청받은 phase만 구현하고, 끝나면 \`docs/reports/phase-N.md\`에 구현 내용·변경 파일·실행/테스트 방법을 요약한다.
-- 서로 독립적인 작업은 필요하면 서브 에이전트를 여러 개 띄워 병렬로 개발해도 된다. 같은 파일을 동시에 수정하지 않도록 나눈다.
+- ${parallel}
 - 플랫폼: ${p.label}. ${p.notes}
-- 커밋/푸시는 Codex가 한다. 직접 커밋하지 않는다.
+- 커밋/푸시는 기획 담당이 한다. 직접 커밋하지 않는다.
 - 계획과 다르게 구현해야 할 이유가 있으면 보고서에 근거를 남긴다.
+`;
+}
+
+// 각 CLI가 자동으로 읽는 파일: 역할 문서를 가리키기만 한다 (같은 도구가 두 역할을 맡아도 충돌 없음)
+function pointerMd(tool, cfg) {
+  const roles = [];
+  if (cfg.planner.tool === tool) roles.push(`- **기획자/리뷰어**로 시작됐다면(사용자와 대화하며 계획·검토를 맡은 경우): \`${PLANNER_DOC}\`를 읽고 따른다.`);
+  if (cfg.developer.tool === tool) roles.push(`- **개발자**로 호출됐다면(특정 phase 구현/수정을 요청받은 경우): \`${DEVELOPER_DOC}\`를 읽고 따른다.`);
+  if (!roles.length) roles.push(`- 이 프로젝트에서 ${TOOLS[tool]}는 역할이 없다. 기획은 ${TOOLS[cfg.planner.tool]}, 개발은 ${TOOLS[cfg.developer.tool]}가 맡는다.`);
+  return `<!-- devagent 생성 파일 - 'devagent apply'로 다시 생성됨 -->
+# devagent 프로젝트 (${TOOLS[tool]})
+
+역할 구성: 기획/검토 = ${TOOLS[cfg.planner.tool]}, 개발 = ${TOOLS[cfg.developer.tool]}
+
+${roles.join("\n")}
 `;
 }
 
@@ -182,12 +225,15 @@ function specStub(cfg) {
 }
 
 // 생성 파일 목록: [경로, 내용, 덮어쓰기여부]
+// 생성 파일 목록: [경로, 내용, 덮어쓰기여부]
 function files(cfg) {
   const out = [
     [".devcontainer/Dockerfile", dockerfile(cfg), true],
     ["docker-compose.yml", compose(cfg), true],
-    ["AGENTS.md", agentsMd(cfg), true],
-    ["CLAUDE.md", claudeMd(cfg), true],
+    [PLANNER_DOC, plannerMd(cfg), true],
+    [DEVELOPER_DOC, developerMd(cfg), true],
+    ["AGENTS.md", pointerMd("codex", cfg), true],
+    ["CLAUDE.md", pointerMd("claude", cfg), true],
     [".gitignore", gitignore(cfg), false],
     [".gitattributes", "* text=auto eol=lf\n", false],
     [cfg.specFile, specStub(cfg), false],
@@ -196,4 +242,4 @@ function files(cfg) {
   return out;
 }
 
-module.exports = { DEFAULT_CONFIG, files, slug };
+module.exports = { DEFAULT_CONFIG, TOOLS, PLANNER_DOC, DEVELOPER_DOC, files, slug, devCmd };
