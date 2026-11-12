@@ -14,8 +14,10 @@ const readJson = (f, def) => { try { return JSON.parse(fs.readFileSync(f, "utf8"
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "project";
 const trim = (s, n = 4000) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "…" : s; };
 
+const keyOf = (dir) => { const r = path.resolve(dir); return process.platform === "win32" ? r.toLowerCase() : r; };
 function state(dir) {
-  if (!runs.has(dir)) {
+  const key = keyOf(dir);
+  if (!runs.has(key)) {
     const sess = readJson(path.join(devDir(dir), "session.json"), {});
     const st = { dir, status: "idle", proc: null, seq: 0, events: [], queue: [], continues: 0, session: sess, lastMessage: "", error: null, startedAt: null, current: null, usage: readJson(path.join(devDir(dir), "usage.json"), {}) };
     // 이전 기록 일부 불러오기
@@ -24,9 +26,9 @@ function state(dir) {
       const lines = fs.readFileSync(log, "utf8").trim().split("\n").slice(-200);
       for (const l of lines) { try { const e = JSON.parse(l); e.seq = ++st.seq; st.events.push(e); } catch {} }
     }
-    runs.set(dir, st);
+    runs.set(key, st);
   }
-  return runs.get(dir);
+  return runs.get(key);
 }
 
 function push(st, ev) {
@@ -149,7 +151,10 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
   const { args, name } = buildArgs(cfg, st, prompt, build);
   if (build) push(st, { src: "system", kind: "system", text: "컨테이너 준비 중 (Dockerfile이 바뀌었으면 이미지를 다시 빌드합니다)" });
   require("./core").ensureVolumes();
-  spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" }); // 이전에 남은 컨테이너 정리
+  const ps = spawnSync("docker", ["ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.State}}"], { encoding: "utf8" });
+  const existing = (ps.stdout || "").trim();
+  if (existing === "running") throw new Error("이 프로젝트의 기획 담당이 이미 다른 곳(다른 GUI 서버나 창)에서 실행 중입니다. 그쪽에서 중지한 뒤 다시 시도하세요.");
+  if (existing) spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" }); // 끝난 채 남은 컨테이너만 정리
   st.status = "running"; st.error = null; st.startedAt = Date.now(); st.lastMessage = ""; st.containerName = name;
   // stdin을 닫아야 함: codex exec는 stdin이 파이프면 끝날 때까지 기다렸다가 프롬프트에 덧붙인다
   const proc = spawn("docker", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
