@@ -121,10 +121,11 @@ function pollDev(st) {
 // ---------- 실행 ----------
 const CONTINUE_MSG = "계속 진행해. 사용자에게 진행 여부를 묻지 말고 다음 단계로 바로 진행해. 꼭 사용자 결정이 필요할 때만 마지막 줄에 [질문]을 붙여 물어보고, 모든 phase가 끝나면 마지막 줄에 [완료]를 써.";
 
-function buildArgs(cfg, st, prompt) {
+function buildArgs(cfg, st, prompt, build) {
   const p = cfg.planner;
   const name = `devagent-planner-${slug(cfg.name)}`;
-  const base = ["compose", "run", "--rm", "-T", "--name", name, "dev"];
+  // 시작할 때는 --build: Dockerfile이 바뀌었으면 이미지를 다시 만든다(안 바뀌었으면 캐시로 바로 진행)
+  const base = ["compose", "run", "--rm", "-T", ...(build ? ["--build"] : []), "--name", name, "dev"];
   const resume = st.session && st.session.tool === p.tool && st.session.id;
   if (p.tool === "claude") {
     const a = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions"];
@@ -141,11 +142,12 @@ function buildArgs(cfg, st, prompt) {
   return { args: [...base, ...a], name };
 }
 
-function runTurn(dir, cfg, prompt, { user } = {}) {
+function runTurn(dir, cfg, prompt, { user, build } = {}) {
   const st = state(dir);
   if (st.proc) throw new Error("이미 실행 중입니다");
   if (user) push(st, { src: "user", kind: "message", text: trim(prompt) });
-  const { args, name } = buildArgs(cfg, st, prompt);
+  const { args, name } = buildArgs(cfg, st, prompt, build);
+  if (build) push(st, { src: "system", kind: "system", text: "컨테이너 준비 중 (Dockerfile이 바뀌었으면 이미지를 다시 빌드합니다)" });
   require("./core").ensureVolumes();
   spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" }); // 이전에 남은 컨테이너 정리
   st.status = "running"; st.error = null; st.startedAt = Date.now(); st.lastMessage = ""; st.containerName = name;
@@ -162,6 +164,7 @@ function runTurn(dir, cfg, prompt, { user } = {}) {
   proc.on("close", (code) => {
     if (buf) feed(st, "planner", cfg.planner.tool, buf);
     st.proc = null;
+    refreshUsage(dir, { probe: false }); // 턴이 끝날 때마다 사용량 기록 다시 읽기
     if (st.stopping) { st.stopping = false; st.status = "idle"; push(st, { src: "system", kind: "system", text: "중지됨" }); return; }
     const msg = st.lastMessage || "";
     if (code !== 0 && !msg) {
@@ -192,7 +195,7 @@ function start(dir, cfg, prompt) {
   const st = state(dir);
   st.continues = 0;
   const p = prompt || (st.session?.id ? "이어서 진행해. docs/PLAN.md와 docs/progress.json을 확인하고 남은 phase를 계속 진행해." : null);
-  return runTurn(dir, cfg, p || require("./core").DEFAULT_PROMPT(cfg), { user: !!prompt });
+  return runTurn(dir, cfg, p || require("./core").DEFAULT_PROMPT(cfg), { user: !!prompt, build: true });
 }
 // 사용자 메시지: 실행 중이면 이번 턴이 끝난 뒤 전달
 function send(dir, cfg, text) {
@@ -217,7 +220,7 @@ function reset(dir) {
 }
 
 // ---------- 사용량 ----------
-let codexUsageCache = { at: 0 };
+
 // Codex 사용량: 세션 기록(rollout-*.jsonl)의 token_count.rate_limits(limit_id "codex") 중 가장 최신 값
 // + 그 뒤에 "usage_limit_exceeded" 오류가 있으면 소진으로 표시. 컨테이너와 PC 기록을 모두 본다(같은 계정).
 const LIMIT_RE = /"rate_limits"|usage_limit_exceeded/;
@@ -248,63 +251,93 @@ function hostRolloutFiles(n = 6) {
   })(root, 0);
   return out.sort((a, b) => b.m - a.m).slice(0, n).map((x) => x.f);
 }
-function codexUsage(dir, force) {
-  if (!force && Date.now() - codexUsageCache.at < 45000 && codexUsageCache.dir === dir) return codexUsageCache.data;
-  const acc = { ts: 0, limitTs: 0 };
-  // 1) 컨테이너(개발에 쓰는 계정) 기록
-  try {
-    require("./core").ensureVolumes();
-    const r = spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "bash", "-lc",
-      'fs=$(ls -t $(find ~/.codex/sessions -name "rollout-*.jsonl" 2>/dev/null) 2>/dev/null | head -6); [ -n "$fs" ] && grep -h -E "\\"rate_limits\\"|usage_limit_exceeded" $fs'], { cwd: dir, encoding: "utf8", timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
-    scanCodexLines((r.stdout || "").split("\n"), acc);
-  } catch {}
-  // 2) PC의 Codex 기록
-  for (const f of hostRolloutFiles()) { try { scanCodexLines(fs.readFileSync(f, "utf8").split("\n"), acc); } catch {} }
-  let data = null;
-  if (acc.ts || acc.limitTs) {
-    const conv = (x) => x ? { used: Math.round(x.used_percent), resetsAt: x.resets_at ? x.resets_at * 1000 : null } : null;
-    data = { five: conv(acc.primary), week: conv(acc.secondary), at: Math.max(acc.ts, acc.limitTs) };
-    // 최신 기록 이후 한도 초과 오류 → 소진(초기화 시각이 아직 안 지났다면)
-    if (acc.limitTs > acc.ts) {
-      data.exhausted = true; data.message = acc.limitMsg;
-      const w = data.week && data.week.used >= 95 ? "week" : "five";
-      if (data[w] && (!data[w].resetsAt || data[w].resetsAt > Date.now())) data[w].used = 100;
-      else if (!data[w]) data[w] = { used: 100, resetsAt: null };
-    }
-    // 초기화 시각이 지난 창은 0%로 (다음 실행 때 실제 값으로 갱신)
-    for (const k of ["five", "week"]) if (data[k] && data[k].resetsAt && data[k].resetsAt < Date.now()) { data[k].used = 0; data[k].stale = true; }
+// ---------- 사용량 (비동기 갱신: 화면이 멈추지 않도록 백그라운드에서 측정) ----------
+const runAsync = (args, cwd, timeout = 120000) => new Promise((resolve) => {
+  let out = "", done = false;
+  const p = spawn("docker", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+  const t = setTimeout(() => { try { p.kill(); } catch {} }, timeout);
+  p.stdout.on("data", (d) => { if (out.length < 32 * 1024 * 1024) out += d; });
+  p.on("close", (code) => { if (!done) { done = true; clearTimeout(t); resolve({ code, out }); } });
+  p.on("error", () => { if (!done) { done = true; clearTimeout(t); resolve({ code: -1, out }); } });
+});
+const hasCompose = (dir) => fs.existsSync(path.join(dir, "docker-compose.yml"));
+
+// Codex: 세션 기록 스캔 결과를 계정 단위로 저장
+function codexFromAcc(acc) {
+  if (!acc.ts && !acc.limitTs) return null;
+  const conv = (x) => x ? { used: Math.round(x.used_percent), resetsAt: x.resets_at ? x.resets_at * 1000 : null } : null;
+  const data = { five: conv(acc.primary), week: conv(acc.secondary), at: Math.max(acc.ts, acc.limitTs) };
+  if (acc.limitTs > acc.ts) {
+    data.exhausted = true; data.message = acc.limitMsg;
+    const w = data.week && data.week.used >= 95 ? "week" : "five";
+    if (data[w] && (!data[w].resetsAt || data[w].resetsAt > Date.now())) data[w].used = 100;
+    else if (!data[w]) data[w] = { used: 100, resetsAt: null };
   }
-  codexUsageCache = { at: Date.now(), dir, data };
   return data;
 }
-// Claude 현재 사용량 측정: 아주 짧은 호출(haiku)의 rate_limit_event로 받는다. 너무 자주 하지 않도록 2분 간격 제한
-let lastProbe = 0;
-function claudeProbe(dir) {
-  if (Date.now() - lastProbe < 120000) return false;
-  lastProbe = Date.now();
-  const st = state(dir);
-  try {
+async function scanCodex(dir) {
+  const acc = { ts: 0, limitTs: 0 };
+  if (hasCompose(dir)) {
     require("./core").ensureVolumes();
-    const r = spawnSync("docker", ["compose", "run", "--rm", "-T", "dev", "claude", "-p", ".", "--model", "haiku", "--max-turns", "1", "--output-format", "stream-json", "--verbose"],
-      { cwd: dir, encoding: "utf8", timeout: 90000, stdio: ["ignore", "pipe", "pipe"] });
-    for (const l of (r.stdout || "").split("\n")) if (l.includes('"rate_limit_event"')) feed(st, "probe", "claude", l);
-    return true;
-  } catch { return false; }
+    const r = await runAsync(["compose", "run", "--rm", "-T", "dev", "bash", "-lc",
+      'fs=$(ls -t $(find ~/.codex/sessions -name "rollout-*.jsonl" 2>/dev/null) 2>/dev/null | head -6); [ -n "$fs" ] && grep -h -E "\\"rate_limits\\"|usage_limit_exceeded" $fs'], dir, 60000);
+    scanCodexLines(r.out.split("\n"), acc);
+  }
+  for (const f of hostRolloutFiles()) { try { scanCodexLines(fs.readFileSync(f, "utf8").split("\n"), acc); } catch {} }
+  const data = codexFromAcc(acc);
+  if (data) { const g = readJson(GLOBAL_USAGE, {}); if (!g.codex || data.at >= (g.codex.at || 0)) { g.codex = data; writeGlobal(g); } }
+}
+// Codex 현재 값: 아주 짧은 요청을 보내면 세션 기록에 최신 rate_limits가 남는다
+async function probeCodex(dir) {
+  if (!hasCompose(dir)) return;
+  require("./core").ensureVolumes();
+  await runAsync(["compose", "run", "--rm", "-T", "dev", "bash", "-lc", 'cd /tmp && codex exec --json --skip-git-repo-check -s read-only "Reply with a single dot." >/dev/null 2>&1; true'], dir, 120000);
+}
+// Claude 현재 값: haiku로 아주 짧은 요청 → rate_limit_event
+async function probeClaude(dir) {
+  if (!hasCompose(dir)) return;
+  require("./core").ensureVolumes();
+  const r = await runAsync(["compose", "run", "--rm", "-T", "dev", "claude", "-p", ".", "--model", "haiku", "--max-turns", "1", "--output-format", "stream-json", "--verbose"], dir, 90000);
+  const st = state(dir);
+  for (const l of r.out.split("\n")) if (l.includes('"rate_limit_event"')) feed(st, "probe", "claude", l);
+}
+function writeGlobal(g) { try { fs.mkdirSync(path.dirname(GLOBAL_USAGE), { recursive: true }); fs.writeFileSync(GLOBAL_USAGE, JSON.stringify(g)); } catch {} }
+
+// 갱신 요청: 같은 작업이 겹치지 않게, 너무 자주 하지 않게
+const refreshing = { codex: false, claude: false };
+const lastRefresh = { codex: 0, claude: 0, scan: 0 };
+function refreshUsage(dir, { probe = true } = {}) {
+  const g = readJson(GLOBAL_USAGE, {});
+  const now = Date.now();
+  if (!refreshing.codex) {
+    // 실제 측정(probe)은 1분 간격, 기록 스캔만은 언제든
+    const doProbe = probe && now - lastRefresh.codex > 60000;
+    refreshing.codex = true;
+    (async () => { try { if (doProbe) { lastRefresh.codex = now; await probeCodex(dir); } await scanCodex(dir); } finally { refreshing.codex = false; } })();
+  }
+  if (!refreshing.claude && probe && now - lastRefresh.claude > 60000) {
+    refreshing.claude = true; lastRefresh.claude = now;
+    (async () => { try { await probeClaude(dir); } finally { refreshing.claude = false; } })();
+  }
 }
 
+// 조회: 저장된 값을 바로 돌려주고, force거나 10분 넘게 오래됐으면 백그라운드 갱신 시작
 function usage(dir, force) {
   const st = state(dir);
   pollDev(st);
-  // 강제 새로고침이거나 Claude 값이 20분 넘게 오래됐으면 지금 값을 측정
-  const g0 = readJson(GLOBAL_USAGE, {});
-  if (fs.existsSync(path.join(dir, "docker-compose.yml")) && (force || !g0.claude || Date.now() - g0.claude.at > 20 * 60000)) claudeProbe(dir);
-  // 개발 담당 로그에서 Claude 사용량 갱신 (rate_limit_event)
   const g = readJson(GLOBAL_USAGE, {});
+  const stale = (x) => !x || Date.now() - x.at > 10 * 60000;
+  if (force || stale(g.codex) || stale(g.claude)) refreshUsage(dir, { probe: true });
+  const fix = (x) => {
+    if (!x) return null;
+    const c = { ...x };
+    for (const k of ["five", "week"]) if (c[k] && c[k].resetsAt && c[k].resetsAt < Date.now()) c[k] = { ...c[k], used: 0, stale: true };
+    return c;
+  };
   const cl = [st.usage.claude, g.claude].filter(Boolean).sort((a, b) => b.at - a.at)[0];
-  const c = cl ? { ...cl } : null;
-  if (c) for (const k of ["five", "week"]) if (c[k] && c[k].resetsAt && c[k].resetsAt < Date.now()) c[k] = { ...c[k], used: 0, stale: true };
-  return { codex: codexUsage(dir, force) || null, claude: c };
+  return { codex: fix(g.codex), claude: fix(cl), refreshing: refreshing.codex || refreshing.claude };
 }
+
 
 // ---------- 조회 ----------
 function view(dir, since = 0) {

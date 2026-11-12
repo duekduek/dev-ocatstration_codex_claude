@@ -37,6 +37,10 @@ RUN printf '%s\\n' '#!/bin/sh' \\
       'if [ ! -f "$HOME/.claude.json" ]; then b=$(ls -t "$HOME"/.claude/backups/.claude.json.backup.* 2>/dev/null | head -1); [ -n "$b" ] && cp "$b" "$HOME/.claude.json"; fi' \\
       'exec "$@"' > /usr/local/bin/devagent-entry && chmod +x /usr/local/bin/devagent-entry
 
+# 에이전트는 명령을 로그인 셸(bash -lc)로 실행하는데, 로그인 셸은 PATH를 초기화한다
+# → 빌드 시점 PATH(플랫폼 도구)를 로그인 셸에도 적용
+RUN echo "export PATH=$PATH" > /etc/profile.d/devagent-path.sh
+
 USER node
 RUN mkdir -p /home/node/.claude /home/node/.codex /home/node/.config/gh
 WORKDIR /workspace

@@ -38,7 +38,8 @@
   .meter .bar span { display: block; height: 100%; background: var(--ok); }
   .meter.mid .bar span { background: #f59f00; } .meter.low .bar span { background: var(--bad); }
   .meter.out .lbl b { color: var(--bad); }
-  .usage { cursor: pointer; }
+  .usage { cursor: pointer; position: relative; }
+  .usage.refreshing::after { content: "갱신 중…"; position: absolute; right: 0; top: -14px; font-size: 11px; color: var(--accent); }
   .limit-warn { background: var(--bad-soft); color: var(--bad); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
   .tabs { max-width: 1280px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; }
   .tabs button { border: 0; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; font-size: 14px; font-weight: 600; color: var(--muted); }
@@ -512,7 +513,7 @@ async function load() {
   try { localStorage.setItem("devagent.dir", dir()); } catch {}
   $("status").innerHTML = "<dt>상태</dt><dd>불러오는 중…</dd>";
   runSeq = 0; $("feed").innerHTML = ""; feedEvents = [];
-  loadDocs(); lastDocSig = ""; loadProgress(); pollRun(); loadUsage();
+  loadDocs(); lastDocSig = ""; loadProgress(); pollRun(); loadUsage(true);
   try {
     const p = await api("/api/project?dir=" + encodeURIComponent(dir()));
     cfgCache = p.config; fill(p.config);
@@ -734,6 +735,7 @@ function renderFeed(all) {
   if (atBottom || all) f.scrollTop = f.scrollHeight;
 }
 function renderRun(v) {
+  if (runStatus !== v.status && runStatus === "running") setTimeout(() => loadUsage(), 3000);
   runStatus = v.status;
   const [label, cls] = RUN_LABEL[v.status] || RUN_LABEL.idle;
   $("runPill").className = "pill " + cls; $("runText").textContent = label;
@@ -769,7 +771,7 @@ async function runAction(action, text) {
     if (action === "start" || action === "send") await saveToggles();
     const v = await api("/api/run", { dir: dir(), action, text, since: runSeq });
     if (v.events.length) { feedEvents.push(...v.events); runSeq = v.seq; renderFeed(true); }
-    renderRun(v); pollRun();
+    renderRun(v); pollRun(); loadUsage(true);
   } catch (e) { alert(e.message); }
 }
 // 자동 계속 진행 토글은 설정에 저장
@@ -802,6 +804,9 @@ async function loadUsage(force) {
   try {
     const u = usageNow = await api("/api/usage?dir=" + encodeURIComponent(dir()) + (force ? "&force=1" : ""));
     const cm = u.codex?.exhausted ? u.codex.message : "";
+    clearTimeout(loadUsage.t);
+    if (u.refreshing) loadUsage.t = setTimeout(() => loadUsage(), 8000); // 측정 끝나면 다시 읽기
+    $("usage").classList.toggle("refreshing", !!u.refreshing);
     $("usage").innerHTML = meterHtml("Codex 5시간", u.codex?.five, cm, u.codex?.at) + meterHtml("Codex 주간", u.codex?.week, cm, u.codex?.at) + meterHtml("Claude 5시간", u.claude?.five, "", u.claude?.at) + meterHtml("Claude 주간", u.claude?.week, "", u.claude?.at);
     // 기획/개발 담당 도구가 소진되면 실시간 패널에 경고
     const out = (t) => { const x = u[t]; if (!x) return null; const w = ["five", "week"].find((k) => x[k] && x[k].used >= 100 && !x[k].stale); return w ? x[w] : null; };
