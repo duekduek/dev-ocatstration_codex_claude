@@ -838,7 +838,10 @@ setInterval(() => { if (!document.hidden) loadUsage(); }, 60000);
   meta = await api("/api/meta");
   for (const [k, v] of Object.entries(meta.platforms)) $("platform").add(new Option(v, k));
   let saved = "", tab = "run"; try { saved = localStorage.getItem("devagent.dir") || ""; tab = localStorage.getItem("devagent.tab") || "run"; } catch {}
-  $("dir").value = saved || "__DIR__";
+  // 실행할 때 지정한 폴더(바로가기·--dir)가 항상 우선. 브라우저에 기억된 폴더는 지정이 없을 때만
+  const launchDir = "__DIR__";
+  $("dir").value = launchDir || saved;
+  if (saved && launchDir && saved.toLowerCase() !== launchDir.toLowerCase()) toast(`지정된 프로젝트로 열었습니다: ${launchDir}`);
   showTab(tab);
   fill(null);
   load();
