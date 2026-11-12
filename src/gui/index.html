@@ -661,6 +661,7 @@ async function loadProgress() {
       <button class="primary" onclick="openInDocs(docs.spec)">요구사항 확인</button> <button class="primary" onclick="$('btnStart').click()">▶ 개발 시작</button></div>`;
     else if (!ph.items.length) $("pgPhase").innerHTML = '<p class="muted" style="margin:0">PLAN.md에 체크박스(- [ ]) phase가 없습니다.</p>';
     else renderPhases(ph);
+    lastPhases = ph; setStartLabel();
     // CI
     if (!p.ci) $("pgCi").innerHTML = '<li class="muted" style="display:block">확인 불가 (원격 저장소 없음 또는 PC의 gh 미로그인)</li>';
     else if (!p.ci.length) $("pgCi").innerHTML = '<li class="muted" style="display:block">실행 기록 없음</li>';
@@ -688,7 +689,13 @@ $("notifyBtn").onclick = async () => {
 };
 setInterval(() => { if (!document.hidden) loadProgress(); }, 8000);
 // ---------- 실시간 작업 (기획 담당 실행/대화) ----------
-let runSeq = 0, runStatus = "idle", feedEvents = [], runTimer = null;
+let runSeq = 0, runStatus = "idle", feedEvents = [], runTimer = null, lastRun = null, lastPhases = null;
+// 시작 버튼: 진행 기록(PLAN/progress)이 있으면 "이어서 진행", 웹 대화가 있으면 "이어하기", 없으면 "개발 시작"
+function setStartLabel() {
+  const ph = lastPhases, cur = ph && ph.items && ph.current >= 0 ? ph.items[ph.current] : null;
+  const allDone = ph && ph.items && ph.items.length && ph.done === ph.items.length;
+  $("btnStart").textContent = allDone ? "▶ 추가 작업 요청" : cur ? `▶ 이어서 진행 (${cur.id ? "Phase " + cur.id : esc(cur.title)}부터)` : lastRun && lastRun.session && lastRun.session.id ? "▶ 이어하기" : "▶ 개발 시작";
+}
 const TOOLNAME = () => ({ planner: cfgCache ? (cfgCache.planner.tool === "claude" ? "Claude" : "Codex") : "기획", developer: cfgCache ? (cfgCache.developer.tool === "codex" ? "Codex" : "Claude") : "개발" });
 const WHO = (src) => src === "planner" ? `기획 · ${TOOLNAME().planner}` : src === "developer" ? `개발 · ${TOOLNAME().developer}` : src === "user" ? "나" : "";
 const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], done: ["완료", "done"], error: ["오류", "error"] };
@@ -737,7 +744,7 @@ function renderRun(v) {
   $("btnStart").disabled = v.status === "running";
   $("btnReset").disabled = v.status === "running";
   $("chatBox").classList.toggle("waiting", v.status === "waiting");
-  $("btnStart").textContent = v.session && v.session.id ? "▶ 이어하기" : "▶ 개발 시작";
+  lastRun = v; setStartLabel();
   const c = v.current;
   $("now").innerHTML = c && v.status === "running"
     ? `<span class="who">${esc(WHO(c.src))}</span><span class="what" title="${esc(c.path || c.text)}">${c.kind === "file" ? "✎ " : c.kind === "reading" ? "👁 " : "› "}${esc(c.path || c.text)}</span><span class="muted">${ago(c.ts)}</span>`
