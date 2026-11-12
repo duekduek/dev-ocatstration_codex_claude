@@ -806,6 +806,8 @@ const resetIn = (t) => { if (!t) return ""; const m = Math.max(0, Math.round((t 
 const clock = (t) => t ? new Date(t).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 function meterHtml(name, w, msg, at) {
   if (!w) return `<div class="meter" title="아직 사용 기록이 없습니다. 한 번 실행하면 표시됩니다"><div class="lbl"><span>${name}</span><b class="muted">기록 없음</b></div><div class="bar"><span style="width:0"></span></div><div class="lbl" style="font-size:11px"><span>&nbsp;</span></div></div>`;
+  // 마지막 기록의 창이 이미 지났으면 지금 값은 모른다 → 100%로 보이지 않게 '확인 불가'
+  if (w.stale) return `<div class="meter" title="${esc("마지막 기록의 초기화 시각(" + clock(w.resetsAt) + ")이 지나 현재 값을 알 수 없습니다. 이 도구로 한 번 실행되면 실제 값으로 갱신됩니다" + (msg ? " · " + msg : ""))}"><div class="lbl"><span>${name}</span><b class="muted">확인 불가</b></div><div class="bar"><span style="width:0"></span></div><div class="lbl" style="font-size:11px"><span>새 기간 · 기록 없음</span>${at ? `<span>${ago(at)} 기준</span>` : ""}</div></div>`;
   const left = Math.max(0, 100 - w.used);
   const tip = [w.resetsAt ? `초기화: ${clock(w.resetsAt)}` : "", msg || "", w.stale ? "초기화 시각이 지났습니다 (다음 실행 때 실제 값으로 갱신)" : ""].filter(Boolean).join(" · ");
   return `<div class="meter ${left <= 0 ? "low out" : left < 15 ? "low" : left < 40 ? "mid" : ""}" title="${esc(tip)}"><div class="lbl"><span>${name}</span><b>${left <= 0 ? "소진" : left + "% 남음"}</b></div><div class="bar"><span style="width:${left}%"></span></div><div class="lbl" style="font-size:11px"><span>${left <= 0 && w.resetsAt ? clock(w.resetsAt) + " 초기화" : esc(resetIn(w.resetsAt))}</span>${at ? `<span class="${Date.now() - at > 15 * 60000 ? "bad" : ""}">${ago(at)} 기준</span>` : ""}</div></div>`;
