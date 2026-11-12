@@ -604,6 +604,10 @@ function toast(msg) {
   document.body.append(t); setTimeout(() => t.remove(), 6000);
   try { if (window.Notification && Notification.permission === "granted") new Notification("devagent", { body: msg }); } catch {}
 }
+let lastAgents = null;
+const isActive = () => runStatus === "running" || !!(lastAgents && lastAgents.containers && lastAgents.containers.some((c) => c.roles && c.roles.length));
+// 진행 중 상태인데 실제로 돌고 있지 않으면 "(중단됨)"으로 표시
+const stOf = (status) => { const st = ST[status] || ST.todo; return ["in_progress", "review", "fix"].includes(status) && !isActive() ? [st[0] + " (중단됨)", "wait"] : st; };
 function renderPhases(ph) {
   // 상태 변화 감지 → 완료 알림
   const now = Object.fromEntries(ph.items.map((x) => [x.id ?? x.title, x.status]));
@@ -624,9 +628,9 @@ function renderPhases(ph) {
     <div><span class="pg-big">${ph.done}/${total}</span> <span class="muted">phase 완료 (${pct}%)</span>
       <span class="muted" style="float:right;font-size:12px">${ph.source === "progress.json" ? "기획 담당 기록 기준" : "PLAN.md 기준"}</span></div>
     <div class="progress" style="margin-top:6px"><span style="width:${pct}%"></span></div>
-    <div style="font-size:13px;margin-bottom:6px">${cur ? `현재: <b>${cur.id ? `Phase ${cur.id}. ` : ""}${esc(cur.title)}</b> <span class="badge ${ST[cur.status][1]}">${ST[cur.status][0]}</span>` : "<b>모든 phase 완료 🎉</b>"}</div>
+    <div style="font-size:13px;margin-bottom:6px">${cur ? `현재: <b>${cur.id ? `Phase ${cur.id}. ` : ""}${esc(cur.title)}</b> <span class="badge ${stOf(cur.status)[1]}">${stOf(cur.status)[0]}</span>${!isActive() && ["in_progress", "review", "fix"].includes(cur.status) ? ' <span class="muted" style="font-size:12px">— 지금 실행 중이 아닙니다. ▶ 이어서 진행을 누르세요</span>' : ""}` : "<b>모든 phase 완료 🎉</b>"}</div>
     <ol class="phases">${ph.items.map((x, i) => {
-      const k = x.id ?? x.title, open = openPhases.has(k), st = ST[x.status] || ST.todo;
+      const k = x.id ?? x.title, open = openPhases.has(k), st = stOf(x.status);
       const td = x.tasks.filter((t) => t.done).length;
       const meta = [x.tasks.length ? `작업 ${td}/${x.tasks.length}` : "", x.doneAt ? `완료 ${ago(Date.parse(x.doneAt))}` : x.startedAt ? `시작 ${ago(Date.parse(x.startedAt))}` : "",
         x.commit ? `<code>${esc(x.commit)}</code>` : "", link(x.report, "보고서"), link(x.review, "리뷰")].filter(Boolean).join(" · ");
@@ -660,7 +664,7 @@ async function loadProgress() {
       <ol><li>기획 담당이 요구사항 명세를 분석해 개발 항목별로 phase를 나눕니다</li><li>phase가 여기에 표시되고, 묻지 않고 바로 개발이 시작됩니다</li><li>phase가 끝날 때마다 상태가 바뀌고 알림이 뜹니다</li></ol><br>
       <button class="primary" onclick="openInDocs(docs.spec)">요구사항 확인</button> <button class="primary" onclick="$('btnStart').click()">▶ 개발 시작</button></div>`;
     else if (!ph.items.length) $("pgPhase").innerHTML = '<p class="muted" style="margin:0">PLAN.md에 체크박스(- [ ]) phase가 없습니다.</p>';
-    else renderPhases(ph);
+    else { lastAgents = p.agents; renderPhases(ph); }
     lastPhases = ph; setStartLabel();
     // CI
     if (!p.ci) $("pgCi").innerHTML = '<li class="muted" style="display:block">확인 불가 (원격 저장소 없음 또는 PC의 gh 미로그인)</li>';
