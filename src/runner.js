@@ -229,7 +229,7 @@ function reset(dir) {
 // Codex 사용량: 세션 기록(rollout-*.jsonl)의 token_count.rate_limits(limit_id "codex") 중 가장 최신 값
 // + 그 뒤에 "usage_limit_exceeded" 오류가 있으면 소진으로 표시. 컨테이너와 PC 기록을 모두 본다(같은 계정).
 const LIMIT_RE = /"rate_limits"|usage_limit_exceeded/;
-function scanCodexLines(lines, acc) {
+function scanCodexLines(lines, acc, utc = false) {
   for (const l of lines) {
     if (!LIMIT_RE.test(l)) continue;
     let j; try { j = JSON.parse(l); } catch { continue; }
@@ -240,7 +240,7 @@ function scanCodexLines(lines, acc) {
     }
     const err = p.error || (p.type === "error" ? p : null);
     if (err && /usage_limit_exceeded|usage limit/i.test(JSON.stringify(err)) && ts > acc.limitTs) {
-      acc.limitTs = ts; acc.limitMsg = String(err.message || "").slice(0, 200);
+      acc.limitTs = ts; acc.limitMsg = String(err.message || "").slice(0, 200); acc.limitUtc = utc;
     }
   }
 }
@@ -274,11 +274,27 @@ function codexFromAcc(acc) {
   const data = { five: conv(acc.primary), week: conv(acc.secondary), at: Math.max(acc.ts, acc.limitTs) };
   if (acc.limitTs > acc.ts) {
     data.exhausted = true; data.message = acc.limitMsg;
-    const w = data.week && data.week.used >= 95 ? "week" : "five";
-    if (data[w] && (!data[w].resetsAt || data[w].resetsAt > Date.now())) data[w].used = 100;
-    else if (!data[w]) data[w] = { used: 100, resetsAt: null };
+    // 마지막 rate_limits 기록은 지난 창일 수 있다 → 오류 메시지의 "try again at ..." 시각을 기준으로 한다
+    const retry = parseRetry(acc.limitMsg, acc.limitTs, acc.limitUtc);
+    data.retryAt = retry;
+    const w = retry ? (retry - acc.limitTs > 5 * 3600e3 ? "week" : "five") : (data.week && data.week.used >= 95 ? "week" : "five");
+    data[w] = { used: 100, resetsAt: retry || (data[w] && data[w].resetsAt > Date.now() ? data[w].resetsAt : null) };
   }
   return data;
+}
+// "try again at 10:52 AM" / "try again at Nov 15th, 2026 10:52 AM" → ms (한도에 걸린 시각 이후의 가장 가까운 시점)
+function parseRetry(msg, from, utc = false) {
+  const m = /try again at ([^.]*?\d{1,2}:\d{2}\s*[AP]M)/i.exec(msg || "");
+  if (!m) return null;
+  const s = m[1].replace(/(\d)(st|nd|rd|th)/g, "$1");
+  const tm = /(\d{1,2}):(\d{2})\s*([AP]M)/i.exec(s);
+  let h = +tm[1] % 12 + (/p/i.test(tm[3]) ? 12 : 0);
+  const datePart = s.slice(0, tm.index).replace(/,\s*$/, "").trim();
+  let d = datePart ? new Date(`${datePart} 00:00${utc ? " UTC" : ""}`) : new Date(from);
+  if (isNaN(d)) d = new Date(from);
+  if (utc) d.setUTCHours(h, +tm[2], 0, 0); else d.setHours(h, +tm[2], 0, 0);
+  if (!datePart) while (d.getTime() <= from) d.setDate(d.getDate() + 1);
+  return d.getTime();
 }
 async function scanCodex(dir) {
   const acc = { ts: 0, limitTs: 0 };
@@ -286,7 +302,7 @@ async function scanCodex(dir) {
     require("./core").ensureVolumes();
     const r = await runAsync(["compose", "run", "--rm", "-T", "dev", "bash", "-lc",
       'fs=$(ls -t $(find ~/.codex/sessions -name "rollout-*.jsonl" 2>/dev/null) 2>/dev/null | head -6); [ -n "$fs" ] && grep -h -E "\\"rate_limits\\"|usage_limit_exceeded" $fs'], dir, 60000);
-    scanCodexLines(r.out.split("\n"), acc);
+    scanCodexLines(r.out.split("\n"), acc, true); // 컨테이너는 UTC 시간대로 메시지를 쓴다
   }
   for (const f of hostRolloutFiles()) { try { scanCodexLines(fs.readFileSync(f, "utf8").split("\n"), acc); } catch {} }
   const data = codexFromAcc(acc);
@@ -336,6 +352,7 @@ function usage(dir, force) {
   const fix = (x) => {
     if (!x) return null;
     const c = { ...x };
+    if (c.exhausted && c.retryAt && c.retryAt <= Date.now()) c.exhausted = false; // 한도 풀림
     for (const k of ["five", "week"]) if (c[k] && c[k].resetsAt && c[k].resetsAt < Date.now()) c[k] = { ...c[k], used: 0, stale: true };
     return c;
   };
