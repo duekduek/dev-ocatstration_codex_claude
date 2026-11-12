@@ -88,17 +88,21 @@ const q = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
 
 // 개발 담당을 비대화형으로 호출하는 명령 (기획 담당이 셸에서 실행)
 // 실행 로그는 .devagent/dev.jsonl 에 남기고(웹 화면 표시용), 기획 담당에게는 최종 답변만 보여준다
-function devCmd(cfg, task) {
+// 출력 마지막 줄에 "[개발 세션: <id>]"를 붙여, 기획 담당이 같은 개발 대화를 이어서(resume) 답할 수 있게 한다.
+// resume가 있으면 그 개발 대화에 이어서 메시지를 보낸다.
+function devCmd(cfg, task, resume) {
   const d = cfg.developer;
   const pre = "mkdir -p .devagent && ";
   if (d.tool === "codex") {
     const m = d.model ? ` -m ${d.model}` : "";
     const r = d.reasoning ? ` -c model_reasoning_effort=${q(d.reasoning)}` : "";
-    return `${pre}codex exec --json${m}${r} --dangerously-bypass-approvals-and-sandbox ${q(task)} 2>/dev/null | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | select(.type=="item.completed" and .item.type=="agent_message") | .item.text'`;
+    const rs = resume ? ` resume ${resume}` : "";
+    return `${pre}codex exec --json${m}${r} --dangerously-bypass-approvals-and-sandbox${rs} ${q(task)} 2>/dev/null | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | if .type=="thread.started" then "[개발 세션: \\(.thread_id)]" elif (.type=="item.completed" and .item.type=="agent_message") then .item.text else empty end'`;
   }
   const m = d.model ? ` --model ${d.model}` : "";
   const e = d.reasoning ? ` --effort ${d.reasoning}` : "";
-  return `${pre}claude -p ${q(task)}${m}${e} --permission-mode bypassPermissions --output-format stream-json --verbose 2>&1 | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | select(.type=="result") | .result'`;
+  const rs = resume ? ` --resume ${resume}` : "";
+  return `${pre}claude -p ${q(task)}${rs}${m}${e} --permission-mode bypassPermissions --output-format stream-json --verbose 2>&1 | tee -a .devagent/dev.jsonl | jq -rR 'fromjson? | select(.type=="result") | "\\(.result)\\n[개발 세션: \\(.session_id)]"'`;
 }
 
 const PLANNER_DOC = "docs/agents/PLANNER.md";
@@ -149,6 +153,13 @@ ${cfg.autoApprove !== false
    \`\`\`bash
    ${devCmd(cfg, `${DEV_PREFIX} docs/PLAN.md의 Phase N을 구현해. 완료 기준을 모두 충족시키고, 끝나면 docs/reports/phase-N.md에 구현 내용·변경 파일·실행/테스트 방법을 요약해.`)}
    \`\`\`
+   - **개발 담당의 질문 처리**: 응답에 \`[기획 질문]\`이 있으면 개발 담당이 판단을 기다리며 멈춘 것이다.
+     - 요구사항 명세·PLAN.md·기존 결정을 근거로 답을 정한다. 결정 내용은 \`docs/decisions.md\`에 한 줄씩 기록한다(날짜, phase, 질문, 결정).
+     - 응답 마지막 줄의 \`[개발 세션: <id>]\`로 **같은 개발 대화를 이어서** 답을 보낸다 (맥락이 유지된다):
+       \`\`\`bash
+       ${devCmd(cfg, `[기획 답변] <답과 근거>. 이 결정대로 이어서 진행해.`, "<개발 세션 id>")}
+       \`\`\`
+     - 기획 담당도 결정할 수 없는 문제(제품 방향, 우선순위, 비용 등)만 사용자에게 \`[질문]\`으로 묻는다. 답을 받으면 위 방법으로 개발 담당에게 전달한다.
 4. **검토**: 개발 담당이 끝나면 progress.json의 status를 \`review\`로 바꾸고, 끝난 세부 작업(tasks)은 done=true로 표시한 뒤 보고서와 실제 코드를 확인한다.${p.localCheck ? ` 직접 검증도 실행한다: \`${p.localCheck}\`` : ""}
    - 기준: 완료 기준 충족, 버그, 보안, 계획과의 일치
    - 문제가 있으면 \`docs/reviews/phase-N.md\`에 지적 사항을 쓰고 수정 요청:
@@ -219,6 +230,17 @@ function developerMd(cfg) {
 - 플랫폼: ${p.label}. ${p.notes}
 - 커밋/푸시는 기획 담당이 한다. 직접 커밋하지 않는다.
 - 계획과 다르게 구현해야 할 이유가 있으면 보고서에 근거를 남긴다.
+
+## 기획 담당에게 질문하기
+
+- 요구사항이 애매하거나, 계획(PLAN.md)과 실제 코드·명세가 충돌하거나, 선택에 따라 결과가 크게 달라지는 결정이 필요하면 **추측하지 않는다.**
+- 질문과 무관하게 할 수 있는 부분까지만 진행하고, 응답 **마지막에** 다음 형식으로 묻고 멈춘다:
+  \`\`\`
+  [기획 질문]
+  1. 질문 (선택지 A / B, 각각의 영향, 내 추천과 이유)
+  \`\`\`
+- 사소한 구현 세부(변수명, 내부 구조 등)는 묻지 말고 스스로 결정해 보고서에 적는다.
+- 기획 담당이 \`[기획 답변]\`으로 이어서 답을 보내면, 그 결정에 따라 작업을 마무리한다.
 `;
 }
 

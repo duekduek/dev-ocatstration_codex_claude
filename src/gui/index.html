@@ -112,6 +112,9 @@
   .ev.msg.planner .bubble { border-left: 3px solid var(--accent); }
   .ev.msg.developer .bubble { border-left: 3px solid var(--ok); }
   .ev.msg.user { text-align: right; }
+  .ev.msg.ask .bubble { background: var(--warn-soft); border-left: 3px solid #f59f00; }
+  .ev.msg.answer .bubble { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+  .ev.msg.ask .who, .ev.msg.answer .who { color: var(--text); }
   .ev.msg.user .bubble { display: inline-block; text-align: left; background: var(--accent); color: #fff; max-width: 85%; }
   .ev.line { display: flex; gap: 8px; align-items: baseline; color: var(--muted); font-size: 12.5px; }
   .ev.line .ic { width: 16px; flex: none; text-align: center; }
@@ -709,6 +712,15 @@ function evHtml(e) {
   const detail = $("showDetail").checked, dev = $("showDev").checked;
   if (e.src === "developer" && !dev) return "";
   const who = WHO(e.src);
+  // 개발 → 기획 질문 / 기획 → 개발 답변은 눈에 띄게
+  if (e.kind === "message" && e.src === "developer" && /[기획 질문]/.test(e.text || "")) {
+    if (!dev) return "";
+    return `<div class="ev msg developer ask"><div class="who">❓ 개발 담당 → 기획 담당 질문</div><div class="bubble md">${md(e.text)}</div></div>`;
+  }
+  if (e.kind === "command" && /[기획 답변]/.test(e.text || "")) {
+    const m = (e.text.match(/[기획 답변]([sS]*?)(?:"s+--|"s*$|\\"s|$)/) || [])[1] || e.text;
+    return `<div class="ev msg planner answer"><div class="who">💬 기획 담당 → 개발 담당 답변</div><div class="bubble">${esc(m.trim())}</div></div>`;
+  }
   switch (e.kind) {
     case "message":
       if (e.sub && !detail) return "";
