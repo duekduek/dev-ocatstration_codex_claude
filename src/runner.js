@@ -210,8 +210,10 @@ function waitForReset(dir, cfg, until) {
   clearTimeout(st.resumeTimer);
   st.status = "limit"; st.resumeAt = until;
   push(st, { src: "system", kind: "system", text: `Claude·Codex 모두 사용량 한도 소진 → ${fallback.hhmm(until)}에 자동으로 이어서 진행합니다` });
-  st.resumeTimer = setTimeout(() => { st.resumeTimer = null; st.resumeAt = null; if (st.status === "limit") safeTurn(dir, cfg, CONTINUE_MSG, false); }, Math.max(0, until - Date.now()) + 60000);
+  st.resumeTimer = setTimeout(() => { st.resumeTimer = null; st.resumeAt = null; if (st.status === "limit") safeTurn(dir, cfg, nextPrompt(st), false); }, Math.max(0, until - Date.now()) + 60000);
 }
+// 한도로 끊긴 턴을 다시 돌릴 때: 답만 하던 중이었으면 그 메시지를 다시, 아니면 계속 진행
+const nextPrompt = (st) => st.answerOnly || CONTINUE_MSG;
 
 function runTurn(dir, cfg, prompt, { user, build } = {}) {
   const st = state(dir);
@@ -260,7 +262,7 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
       // 한도로 끝난 턴: 다른 도구로 바로 이어가거나, 둘 다 막혔으면 초기화까지 대기 (자동 계속 횟수에 넣지 않는다)
       const wait = fallback.waitUntil(cfg);
       if (wait) return waitForReset(dir, cfg, wait);
-      return setTimeout(() => safeTurn(dir, cfg, CONTINUE_MSG, false), 1500);
+      return setTimeout(() => safeTurn(dir, cfg, nextPrompt(st), false), 1500);
     }
     if (code !== 0 && !msg) {
       const err = errBuf.split("\n").filter((l) => l && !/level=warning|Container /.test(l)).slice(-3).join(" ");
@@ -268,9 +270,11 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
       push(st, { src: "system", kind: "error", text: `기획 담당 실행 실패: ${st.error}` });
       return;
     }
-    if (/\[완료\]/.test(msg)) { st.status = "done"; st.continues = 0; push(st, { src: "system", kind: "system", text: "모든 작업 완료" }); return; }
+    if (/\[완료\]/.test(msg)) { st.status = "done"; st.continues = 0; st.answerOnly = null; push(st, { src: "system", kind: "system", text: "모든 작업 완료" }); return; }
     if (st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, next, true)); }
-    if (/\[질문\]/.test(msg)) { st.status = "waiting"; push(st, { src: "system", kind: "system", text: "기획 담당이 답변을 기다립니다" }); return; }
+    if (/\[질문\]/.test(msg)) { st.answerOnly = null; st.status = "waiting"; push(st, { src: "system", kind: "system", text: "기획 담당이 답변을 기다립니다" }); return; }
+    // 멈춰 있을 때 보낸 메시지(진행 상황 질문 등)는 답만 하고 멈춘다 — 자동 "계속 진행"이 새 작업을 시작하지 않게
+    if (st.answerOnly) { st.answerOnly = null; st.status = "idle"; push(st, { src: "system", kind: "system", text: "답변 완료 (이어서 진행하려면 ▶ 버튼)" }); return; }
     if (cfg.autoContinue !== false && st.continues < (cfg.maxAutoContinue || 40)) {
       st.continues++;
       push(st, { src: "system", kind: "system", text: `자동 계속 진행 (${st.continues})` });
@@ -288,7 +292,7 @@ function safeTurn(dir, cfg, prompt, user) {
 // 시작/이어하기
 function start(dir, cfg, prompt) {
   const st = state(dir);
-  st.continues = 0;
+  st.continues = 0; st.answerOnly = null;
   const p = prompt || (st.session?.id ? "이어서 진행해. docs/PLAN.md와 docs/progress.json을 확인하고 남은 phase를 계속 진행해." : null);
   return runTurn(dir, cfg, p || require("./core").DEFAULT_PROMPT(cfg), { user: !!prompt, build: true });
 }
@@ -296,6 +300,8 @@ function start(dir, cfg, prompt) {
 function send(dir, cfg, text) {
   const st = state(dir);
   st.continues = 0;
+  // 완료·대기·오류로 멈춰 있을 때 보낸 메시지는 답만 받는다 (작업 중이거나 [질문]에 답하는 경우는 이어서 진행)
+  st.answerOnly = !st.proc && ["done", "idle", "error"].includes(st.status) ? text : null;
   if (st.proc) { st.queue.push(text); push(st, { src: "user", kind: "message", text: trim(text), queued: true }); return st; }
   return runTurn(dir, cfg, text, { user: true });
 }
