@@ -312,6 +312,30 @@
     </section>
 
     <section class="card">
+      <h2>한도 소진 시 전환 (2순위)</h2>
+      <div class="check"><input type="checkbox" id="limitFallback"><label for="limitFallback">5시간·주간 한도가 차면 다른 도구로 역할을 넘기기</label></div>
+      <p class="desc">한도는 모델이 아니라 계정(도구) 단위라서 Claude ⇄ Codex로 넘깁니다. 원래 도구가 초기화되면 다음 턴부터 1순위로 돌아오고, 둘 다 차면 먼저 초기화되는 쪽까지 기다렸다가 자동으로 이어갑니다. 끄면 전환 없이 초기화까지 기다립니다.</p>
+      <div class="models" id="fallbackBoxes">
+        <div class="model-box">
+          <h3>Claude로 넘길 때</h3>
+          <select id="fbClaudeTool" hidden><option value="claude">Claude</option></select>
+          <label for="fbClaudeModel">모델 <span id="fbClaudeSrc"></span></label>
+          <select id="fbClaudeModel"></select>
+          <div id="fbClaudeReasoningBox"><label for="fbClaudeReasoning" style="margin-top:10px">추론 강도</label><select id="fbClaudeReasoning"></select></div>
+          <p class="desc" id="fbClaudeDesc" hidden></p><span id="fbClaudeVerify" hidden></span>
+        </div>
+        <div class="model-box">
+          <h3>Codex로 넘길 때</h3>
+          <select id="fbCodexTool" hidden><option value="codex">Codex</option></select>
+          <label for="fbCodexModel">모델 <span id="fbCodexSrc"></span></label>
+          <select id="fbCodexModel"></select>
+          <div id="fbCodexReasoningBox"><label for="fbCodexReasoning" style="margin-top:10px">추론 강도</label><select id="fbCodexReasoning"></select></div>
+          <p class="desc" id="fbCodexDesc" hidden></p><span id="fbCodexVerify" hidden></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>프로젝트</h2>
       <div class="grid">
         <div><label for="name">프로젝트 이름 (저장소 이름)</label><input id="name"></div>
@@ -470,13 +494,21 @@ async function loadRole(role, want, refresh) {
   $(role + "Src").textContent = SRC_LABEL[list.source] || "";
   sel.innerHTML = "";
   for (const m of list.models) sel.add(new Option(tool === "claude" ? m.label : (m.id || m.label), m.id));
-  setSelect(sel, want ? want.model ?? "" : (tool === "claude" ? "sonnet" : ""));
+  const model = want ? want.model ?? "" : (tool === "claude" ? "sonnet" : "");
+  setSelect(sel, model, model === "" ? "도구 기본 모델" : undefined);
   fillLevels(role, want && want.reasoning);
   $(role + "Verify").textContent = "";
 }
+// 2순위(한도 소진 시 넘겨받는 도구)의 모델/추론 강도: config.fallback.<도구>
+const FB_ROLES = { claude: "fbClaude", codex: "fbCodex" };
 function applyModelValues(c) {
   for (const r of ROLES) { $(r + "Tool").value = c[r].tool || meta.defaults[r].tool; loadRole(r, c[r]); }
+  $("limitFallback").checked = c.limitFallback !== false;
+  $("fallbackBoxes").hidden = !$("limitFallback").checked;
+  for (const [tool, r] of Object.entries(FB_ROLES)) loadRole(r, { model: "", reasoning: "", ...((c.fallback || {})[tool] || {}) });
 }
+$("limitFallback").onchange = () => { $("fallbackBoxes").hidden = !$("limitFallback").checked; };
+for (const r of Object.values(FB_ROLES)) $(r + "Model").onchange = () => fillLevels(r);
 for (const r of ROLES) {
   $(r + "Tool").onchange = () => loadRole(r, null);
   $(r + "Model").onchange = () => { fillLevels(r); $(r + "Verify").textContent = ""; };
@@ -508,6 +540,8 @@ function fill(cfg) {
 function readForm() {
   return { name: $("name").value.trim(), platform: $("platform").value, specFile: $("specFile").value.trim(),
     planner: roleValue("planner"), developer: roleValue("developer"),
+    limitFallback: $("limitFallback").checked,
+    fallback: Object.fromEntries(Object.entries(FB_ROLES).map(([tool, r]) => [tool, { model: $(r + "Model").value, reasoning: $(r + "Reasoning").value }])),
     autoApprove: $("autoApprove").checked, autoContinue: $("autoContinue").checked,
     git: { visibility: $("visibility").value, pushOn: $("pushOn").value, buildCheck: $("buildCheck").checked } };
 }
