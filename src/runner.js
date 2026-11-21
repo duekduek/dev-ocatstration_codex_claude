@@ -194,6 +194,16 @@ function swapNote(st, cfg, eff) {
 }
 const PLANNER_DOC_NAME = require("./templates").PLANNER_DOC;
 
+// 상단 사용량 기록에 이미 소진으로 나온 도구도 반영 (실행 전에 한도에 걸려 있던 경우)
+function syncLimits() {
+  const g = readJson(GLOBAL_USAGE, {}), now = Date.now();
+  if (g.codex?.exhausted && g.codex.retryAt > now && !fallback.exhaustedUntil("codex")) fallback.markExhausted("codex", g.codex.retryAt, g.codex.message);
+  for (const t of ["codex", "claude"]) for (const w of ["five", "week"]) {
+    const x = g[t]?.[w];
+    if (x && x.used >= 100 && x.resetsAt > now && !fallback.exhaustedUntil(t)) fallback.markExhausted(t, x.resetsAt, `${w} 100%`);
+  }
+}
+
 // 기획 담당이 쓸 도구가 모두 한도에 걸려 있으면 풀리는 시각까지 기다렸다가 자동으로 이어간다
 function waitForReset(dir, cfg, until) {
   const st = state(dir);
@@ -207,6 +217,7 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
   const st = state(dir);
   if (st.proc) throw new Error("이미 실행 중입니다");
   if (user) push(st, { src: "user", kind: "message", text: trim(prompt) });
+  syncLimits();
   const wait = fallback.waitUntil(cfg);
   if (wait) { if (user) st.queue.unshift(prompt); waitForReset(dir, cfg, wait); return st; }
   clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null;
