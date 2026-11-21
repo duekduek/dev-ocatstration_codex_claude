@@ -706,7 +706,7 @@ function setStartLabel() {
 }
 const TOOLNAME = () => ({ planner: cfgCache ? (cfgCache.planner.tool === "claude" ? "Claude" : "Codex") : "기획", developer: cfgCache ? (cfgCache.developer.tool === "codex" ? "Codex" : "Claude") : "개발" });
 const WHO = (src) => src === "planner" ? `기획 · ${TOOLNAME().planner}` : src === "developer" ? `개발 · ${TOOLNAME().developer}` : src === "user" ? "나" : "";
-const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], done: ["완료", "done"], error: ["오류", "error"] };
+const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], limit: ["한도 초기화 대기", "waiting"], done: ["완료", "done"], error: ["오류", "error"] };
 
 function evHtml(e) {
   const detail = $("showDetail").checked, dev = $("showDev").checked;
@@ -757,8 +757,10 @@ function renderRun(v) {
   if (v.queue) sub.push(`보낼 메시지 ${v.queue}개 대기`);
   if (v.status === "error" && v.error) sub.push(v.error.slice(0, 120));
   if (v.status === "waiting") sub.push("아래 입력창에 답을 입력하세요");
+  if (v.status === "limit" && v.resumeAt) sub.push(`${new Date(v.resumeAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}에 자동 재개`);
+  if (v.swapped) sub.push(v.swapped);
   $("runSub").textContent = sub.join(" · ");
-  $("btnStop").disabled = v.status !== "running";
+  $("btnStop").disabled = v.status !== "running" && v.status !== "limit";
   $("btnStart").disabled = v.status === "running";
   $("btnReset").disabled = v.status === "running";
   $("chatBox").classList.toggle("waiting", v.status === "waiting");
