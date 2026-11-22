@@ -33,6 +33,47 @@ function state(dir) {
   return runs.get(key);
 }
 
+// ---------- 소요시간·토큰 집계 (.devagent/stats.json) ----------
+const ROLE_KO = { planner: "기획", developer: "개발" };
+const blankTot = () => ({ ms: 0, in: 0, out: 0, cached: 0, n: 0 });
+function loadStats(st) {
+  if (!st.stats) { const s = readJson(path.join(devDir(st.dir), "stats.json"), {}); st.stats = { planner: { ...blankTot(), ...s.planner }, developer: { ...blankTot(), ...s.developer }, since: s.since || Date.now() }; }
+  return st.stats;
+}
+const saveStats = (st) => { try { fs.writeFileSync(path.join(devDir(st.dir), "stats.json"), JSON.stringify(st.stats)); } catch {} };
+// 토큰 사용 보고: Claude result.usage / Codex turn.completed.usage
+function addTokens(cur, u, tool) {
+  if (!cur || !u) return;
+  if (tool === "codex") { const c = u.cached_input_tokens || 0; cur.in += Math.max(0, (u.input_tokens || 0) - c); cur.cached += c; }
+  else { cur.in += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0); cur.cached += u.cache_read_input_tokens || 0; }
+  cur.out += u.output_tokens || 0; cur.counted = true;
+}
+const sessStart = (tool) => ({ t0: Date.now(), tool, in: 0, out: 0, cached: 0 });
+function sessEnd(st, src, cur, ms, note) {
+  if (!cur) return;
+  ms = ms || Date.now() - cur.t0;
+  const tot = loadStats(st)[src];
+  tot.ms += ms; tot.in += cur.in; tot.out += cur.out; tot.cached += cur.cached; tot.n++;
+  saveStats(st);
+  push(st, { src, kind: "session", tool: cur.tool, ms, in: cur.in, out: cur.out, cached: cur.cached, counted: !!cur.counted, note, text: `${ROLE_KO[src]} 세션 종료` });
+}
+// 개발 담당 세션 추적 (dev.jsonl): 시작/끝
+function devTrack(st, j) {
+  if (st.replaying) return;
+  st.devLast = Date.now();
+  const startEv = (j.type === "system" && j.subtype === "init") || j.type === "turn.started";
+  const endEv = j.type === "result" || j.type === "turn.completed" || j.type === "turn.failed";
+  const tool = j.type === "system" || j.type === "result" ? "claude" : "codex";
+  if (startEv && !st.devCur) st.devCur = sessStart(tool);
+  if (startEv) st.devBusy = true;
+  if (endEv) {
+    if (!st.devCur) st.devCur = sessStart(tool);
+    addTokens(st.devCur, j.usage, tool);
+    sessEnd(st, "developer", st.devCur, j.duration_ms, j.type === "turn.failed" || j.is_error ? "오류" : null);
+    st.devCur = null; st.devBusy = false;
+  }
+}
+
 function push(st, ev) {
   ev.ts = ev.ts || Date.now();
   ev.seq = ++st.seq;
@@ -114,6 +155,13 @@ function feed(st, src, tool, line) {
   line = line.trim();
   if (!line.startsWith("{")) return;
   let j; try { j = JSON.parse(line); } catch { return; }
+  if (src === "developer") devTrack(st, j);
+  else if (src === "planner") {
+    if (j.type === "result") addTokens(st.planCur, j.usage, "claude");
+    else if (j.type === "turn.completed") addTokens(st.planCur, j.usage, "codex");
+    // 기획 담당이 개발 명령을 실행하기 시작 → 개발 담당 작업 중으로 본다 (dev.jsonl 첫 줄이 나오기 전 틈)
+    if (/dev\.jsonl/.test(line) && /"(command_execution|tool_use)"/.test(line) && /item\.started|"assistant"/.test(line)) { st.devBusy = true; st.devLast = Date.now(); }
+  }
   (tool === "claude" || j.type === "assistant" || j.type === "system" || j.type === "rate_limit_event" || j.type === "result" ? fromClaude : fromCodex)(st, src, j);
 }
 function saveSession(st) { try { fs.writeFileSync(path.join(devDir(st.dir), "session.json"), JSON.stringify(st.session)); } catch {} }
@@ -148,7 +196,22 @@ function pollDev(st) {
   devOffsets.set(st.dir, off + Buffer.byteLength(text.slice(0, lastNl + 1)));
   st.replaying = first; // 처음 읽는 지난 기록의 한도 메시지는 이미 지난 일이라 무시
   try { for (const l of text.slice(0, lastNl).split("\n")) feed(st, "developer", null, l); } finally { st.replaying = false; }
+  maybeInterrupt(st);
 }
+
+// 실행 중에 사용자 메시지가 들어오면: 개발 담당이 일하는 중이 아닐 때 기획 턴을 멈추고 바로 전달한다
+// (기획 턴 하나가 개발 지시를 여러 번 포함해 한 시간 넘게 이어질 수 있어서 턴 끝까지 기다리면 너무 늦다)
+const DEV_STALE = 15 * 60000;
+function maybeInterrupt(st) {
+  if (!st.proc || !st.queue.length || st.interrupting || st.stopping) return;
+  if (st.cfg && st.cfg.interruptOnMessage === false) return;
+  if (st.devBusy && Date.now() - (st.devLast || 0) < DEV_STALE) return;
+  st.interrupting = true;
+  push(st, { src: "system", kind: "system", text: "새 메시지를 바로 전달하려고 진행 중인 기획 턴을 잠시 멈춥니다 (답변 뒤 이어서 진행)" });
+  spawnSync("docker", ["stop", "-t", "5", st.containerName], { encoding: "utf8" });
+  try { st.proc.kill(); } catch {}
+}
+const INTERRUPT_NOTE = "[사용자 메시지] 진행 중이던 네 턴을 사용자 메시지 전달을 위해 중간에 끊었다. 먼저 아래 메시지에 답하거나 반영하고, 끊긴 작업은 git status와 docs/progress.json을 확인해 이어서 진행해.\n\n";
 
 // ---------- 실행 ----------
 const CONTINUE_MSG = "계속 진행해. 사용자에게 진행 여부를 묻지 말고 다음 단계로 바로 진행해. 꼭 사용자 결정이 필요할 때만 마지막 줄에 [질문]을 붙여 물어보고, 모든 phase가 끝나면 마지막 줄에 [완료]를 써.";
@@ -240,6 +303,7 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
   if (existing === "running") throw new Error("이 프로젝트의 기획 담당이 이미 다른 곳(다른 GUI 서버나 창)에서 실행 중입니다. 그쪽에서 중지한 뒤 다시 시도하세요.");
   if (existing) spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" }); // 끝난 채 남은 컨테이너만 정리
   st.status = "running"; st.error = null; st.startedAt = Date.now(); st.lastMessage = ""; st.containerName = name;
+  st.cfg = cfg; st.planCur = sessStart(eff.planner.tool);
   // stdin을 닫아야 함: codex exec는 stdin이 파이프면 끝날 때까지 기다렸다가 프롬프트에 덧붙인다
   const proc = spawn("docker", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
   st.proc = proc;
@@ -255,6 +319,11 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
     st.proc = null;
     pollDev(st); // 개발 담당의 한도 소진도 이번 턴 안에 반영
     refreshUsage(dir, { probe: false }); // 턴이 끝날 때마다 사용량 기록 다시 읽기
+    const interrupted = st.interrupting; st.interrupting = false;
+    sessEnd(st, "planner", st.planCur, 0, st.stopping ? "중지" : interrupted ? "메시지로 중단" : null); st.planCur = null;
+    if (st.devCur) { sessEnd(st, "developer", st.devCur, 0, "중단"); st.devCur = null; }
+    st.devBusy = false;
+    if (interrupted && !st.stopping && st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, INTERRUPT_NOTE + next, false)); }
     if (st.stopping) { st.stopping = false; st.status = "idle"; push(st, { src: "system", kind: "system", text: "중지됨" }); return; }
     const msg = st.lastMessage || "";
     if (!st.limitHit && code !== 0) limitCheck(st, "planner", eff.planner.tool, errBuf);
@@ -302,7 +371,7 @@ function send(dir, cfg, text) {
   st.continues = 0;
   // 완료·대기·오류로 멈춰 있을 때 보낸 메시지는 답만 받는다 (작업 중이거나 [질문]에 답하는 경우는 이어서 진행)
   st.answerOnly = !st.proc && ["done", "idle", "error"].includes(st.status) ? text : null;
-  if (st.proc) { st.queue.push(text); push(st, { src: "user", kind: "message", text: trim(text), queued: true }); return st; }
+  if (st.proc) { st.queue.push(text); push(st, { src: "user", kind: "message", text: trim(text), queued: true }); pollDev(st); maybeInterrupt(st); return st; }
   return runTurn(dir, cfg, text, { user: true });
 }
 function stop(dir) {
@@ -466,6 +535,7 @@ function view(dir, since = 0) {
   return {
     status: st.status, error: st.error, session: st.session, startedAt: st.startedAt, queue: st.queue.length, continues: st.continues,
     current: st.current, seq: st.seq, resumeAt: st.resumeAt || null,
+    stats: loadStats(st), devBusy: !!st.devBusy, devStartedAt: st.devCur ? st.devCur.t0 : null,
     swapped: ["planner", "developer"].filter((r) => st.applied && st.applied[r] !== (st.cfgTools || {})[r]).map((r) => `${r === "planner" ? "기획" : "개발"}: ${TOOL_NAME[st.applied[r]]}로 임시 전환`).join(", "),
     events: st.events.filter((e) => e.seq > since).slice(-300),
   };

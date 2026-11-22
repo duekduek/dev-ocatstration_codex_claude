@@ -240,6 +240,7 @@
             <button class="small" id="btnReset" title="기획 담당과의 대화를 새로 시작 (진행 파일은 유지)">새 대화</button>
           </span>
         </div>
+        <div class="run-stats muted" id="runStats" style="font-size:12.5px;margin:4px 0"></div>
         <div class="limit-warn" id="limitWarn" hidden></div>
         <div class="now" id="now"><span class="who">지금</span><span class="what muted">작업 없음</span></div>
         <div class="feed" id="feed"></div>
@@ -771,9 +772,25 @@ function evHtml(e) {
     case "subagent": return `<div class="ev line"><span class="ic">⑂</span><span class="tx">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>`;
     case "todo": return `<div class="ev"><div class="who">${esc(who)} · 할 일</div><ul class="todo">${(e.items || []).map((t) => `<li class="${t.done ? "muted" : ""}">${t.done ? "☑" : "☐"} ${esc(t.text)}</li>`).join("")}</ul></div>`;
     case "error": return `<div class="ev err"><div class="bubble">⚠ ${esc(e.text)}</div></div>`;
+    case "session": return `<div class="ev sys">— ${esc(WHO(e.src))} 세션 ${e.note ? esc(e.note) : "종료"} · ${fmtDur(e.ms)} · ${e.counted ? fmtTok(e) : "토큰 미집계"} · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
     case "system": return `<div class="ev sys">— ${esc(e.text)} · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
   }
   return "";
+}
+function fmtDur(ms) { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${Math.round((ms || 0) / 1000)}초` : m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간 ${m % 60}분`; }
+function fmtN(n) { n = n || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n); }
+function fmtTok(x) { return `입력 ${fmtN(x.in)}${x.cached ? ` (+캐시 ${fmtN(x.cached)})` : ""} / 출력 ${fmtN(x.out)}`; }
+function renderStats(v) {
+  const s = v.stats; if (!s) return;
+  const p = s.planner, d = s.developer, now = Date.now();
+  const live = (v.status === "running" && v.startedAt ? now - v.startedAt : 0);
+  const devLive = v.devStartedAt ? now - v.devStartedAt : 0;
+  const tot = { in: p.in + d.in, out: p.out + d.out, cached: p.cached + d.cached };
+  $("runStats").innerHTML = [
+    `<b>기획</b> ${fmtDur(p.ms + live)} · ${p.n}회 · ${fmtTok(p)}`,
+    `<b>개발</b> ${fmtDur(d.ms + devLive)} · ${d.n}회 · ${fmtTok(d)}`,
+    `<b>합계</b> ${fmtDur(p.ms + live)} · ${fmtTok(tot)}`,
+  ].join(" &nbsp;|&nbsp; ") + `<span title="집계 시작 시각"> &nbsp;(${new Date(s.since).toLocaleDateString("ko-KR")}부터)</span>`;
 }
 function renderFeed(all) {
   const f = $("feed"), atBottom = f.scrollHeight - f.scrollTop - f.clientHeight < 60;
@@ -786,7 +803,10 @@ function renderRun(v) {
   const [label, cls] = RUN_LABEL[v.status] || RUN_LABEL.idle;
   $("runPill").className = "pill " + cls; $("runText").textContent = label;
   const sub = [];
-  if (v.status === "running" && v.startedAt) sub.push(`${Math.max(0, Math.floor((Date.now() - v.startedAt) / 60000))}분째`);
+  if (v.status === "running" && v.startedAt) sub.push(`이번 기획 턴 ${fmtDur(Date.now() - v.startedAt)}째`);
+  if (v.devStartedAt) sub.push(`개발 세션 ${fmtDur(Date.now() - v.devStartedAt)}째`);
+  if (v.queue && v.status === "running") sub.push(v.devBusy ? "개발 담당 작업이 끝나면 메시지 전달" : "메시지 전달 중");
+  renderStats(v);
   if (v.continues) sub.push(`자동 계속 ${v.continues}회`);
   if (v.queue) sub.push(`보낼 메시지 ${v.queue}개 대기`);
   if (v.status === "error" && v.error) sub.push(v.error.slice(0, 120));
