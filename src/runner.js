@@ -75,7 +75,8 @@ function devTrack(st, j) {
 }
 
 // ---------- 사용자 질의 / 답변 (.devagent/qa.json) ----------
-const QA_NOTE = "\n\n(이 메시지에 대한 답이나 반영 결과는 먼저 `[답변]`으로 시작하는 메시지 하나로 사용자에게 짧게 써라. 그 다음에 하던 작업을 이어가.)";
+// 답을 턴 끝까지 미루지 않게, 개발 지시 등 다른 일보다 먼저 [답변]을 쓰라고 메시지 앞에 붙인다
+const QA_PRE = "[사용자 질의] 개발 지시나 다른 명령을 실행하기 전에, 아래 메시지에 대한 답(또는 어떻게 반영할지)을 `[답변]`으로 시작하는 메시지 하나로 사용자에게 먼저 짧게 써라. 그 메시지를 쓴 다음에 하던 작업을 이어가.\n\n";
 const qaFile = (st) => path.join(devDir(st.dir), "qa.json");
 // 파일을 밖에서 고친 경우(지난 기록 옮기기 등)도 반영되도록 수정 시각이 바뀌면 다시 읽는다
 const mtimeOf = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
@@ -315,11 +316,12 @@ function runTurn(dir, cfg, prompt, { user, build, qa } = {}) {
   const st = state(dir);
   if (st.proc) throw new Error("이미 실행 중입니다");
   if (qa === "deliver") qaDeliver(st);
-  if (qa) { push(st, { src: "user", kind: "qa-sent", text: trim(prompt, 200) }); prompt += QA_NOTE; }
+  const raw = prompt;
+  if (qa) { push(st, { src: "user", kind: "qa-sent", text: trim(prompt.replace(INTERRUPT_NOTE, ""), 200) }); prompt = QA_PRE + prompt; }
   else if (user) push(st, { src: "user", kind: "message", text: trim(prompt) });
   syncLimits();
   const wait = fallback.waitUntil(cfg);
-  if (wait) { if (qa) { st.queue.unshift(prompt.slice(0, prompt.length - QA_NOTE.length)); const e = st.qa.find((x) => x.id === st.qaActive); if (e) e.status = "queued"; st.qaActive = null; saveQa(st); } else if (user) st.queue.unshift(prompt); waitForReset(dir, cfg, wait); return st; }
+  if (wait) { if (qa) { st.queue.unshift(raw); const e = st.qa.find((x) => x.id === st.qaActive); if (e) e.status = "queued"; st.qaActive = null; saveQa(st); } else if (user) st.queue.unshift(prompt); waitForReset(dir, cfg, wait); return st; }
   clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null;
   const eff = fallback.effective(cfg);
   if (eff.planner.swappedFrom && eff.planner.tool !== (st.applied?.planner || cfg.planner.tool))
@@ -359,6 +361,12 @@ function runTurn(dir, cfg, prompt, { user, build, qa } = {}) {
     sessEnd(st, "planner", st.planCur, 0, st.stopping ? "중지" : interrupted ? "메시지로 중단" : null); st.planCur = null;
     if (st.devCur) { sessEnd(st, "developer", st.devCur, 0, "중단"); st.devCur = null; }
     st.devBusy = false;
+    // 끊긴 턴에서 아직 답하지 못한 질의는 대기열 맨 앞으로 되돌린다 (다음 질의에 밀려 묻히지 않게)
+    if (interrupted && st.qaActive) {
+      const e = loadQa(st).find((x) => x.id === st.qaActive);
+      if (e && e.status === "asked") { e.status = "queued"; st.queue.unshift(e.q); }
+      st.qaActive = null; saveQa(st);
+    }
     if (interrupted && !st.stopping && st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, INTERRUPT_NOTE + next, false, "deliver")); }
     if (st.stopping) { st.stopping = false; st.status = "idle"; push(st, { src: "system", kind: "system", text: "중지됨" }); return; }
     const msg = st.lastMessage || "";
