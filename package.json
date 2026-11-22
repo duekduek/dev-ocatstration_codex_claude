@@ -11,7 +11,7 @@
   },
   "scripts": {
     "gui": "node bin/devagent.js gui",
-    "test": "node test/smoke.js"
+    "test": "node test/smoke.js && node test/fallback.js"
   },
   "license": "MIT"
 }
