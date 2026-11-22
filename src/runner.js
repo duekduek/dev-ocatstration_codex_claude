@@ -77,8 +77,14 @@ function devTrack(st, j) {
 // ---------- 사용자 질의 / 답변 (.devagent/qa.json) ----------
 const QA_NOTE = "\n\n(이 메시지에 대한 답이나 반영 결과는 먼저 `[답변]`으로 시작하는 메시지 하나로 사용자에게 짧게 써라. 그 다음에 하던 작업을 이어가.)";
 const qaFile = (st) => path.join(devDir(st.dir), "qa.json");
-function loadQa(st) { if (!st.qa) st.qa = readJson(qaFile(st), []); return st.qa; }
-const saveQa = (st) => { try { fs.writeFileSync(qaFile(st), JSON.stringify(st.qa.slice(-200))); } catch {} };
+// 파일을 밖에서 고친 경우(지난 기록 옮기기 등)도 반영되도록 수정 시각이 바뀌면 다시 읽는다
+const mtimeOf = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
+function loadQa(st) {
+  const m = mtimeOf(qaFile(st));
+  if (!st.qa || m !== st.qaMtime) { st.qa = readJson(qaFile(st), []); st.qaMtime = m; }
+  return st.qa;
+}
+const saveQa = (st) => { try { fs.writeFileSync(qaFile(st), JSON.stringify(st.qa.slice(-200))); st.qaMtime = mtimeOf(qaFile(st)); } catch {} };
 function qaAdd(st, text, queued) {
   const e = { id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), q: text, ts: Date.now(), status: queued ? "queued" : "asked" };
   loadQa(st).push(e); if (!queued) st.qaActive = e.id; saveQa(st); return e;
