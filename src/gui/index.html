@@ -129,6 +129,13 @@
   .feed-tools { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--muted); margin: 8px 0; }
   .feed-tools label { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; }
   .feed-tools input { width: auto; }
+  .qa-item { border: 1px solid var(--line, #ddd); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+  .qa-item .q { font-weight: 600; white-space: pre-wrap; }
+  .qa-item .meta { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+  .qa-item .a { border-top: 1px dashed var(--line, #ddd); padding-top: 8px; }
+  .qa-item.pending .a { color: var(--muted); font-style: italic; }
+  .qa-link { cursor: pointer; text-decoration: underline; }
+  .badge { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--warn, #c80); color: #fff; font-size: 11px; line-height: 16px; }
   .chat { display: flex; gap: 8px; margin-top: 10px; }
   .chat textarea { min-height: 44px; max-height: 160px; resize: vertical; font-size: 14px; }
   .chat.waiting textarea { border-color: var(--warn); outline: 2px solid var(--warn-soft); }
@@ -215,6 +222,7 @@
   </div>
   <nav class="tabs" role="tablist">
     <button data-tab="run" class="on">진행</button>
+    <button data-tab="qa">질의 <span class="badge" id="qaBadge" hidden></span></button>
     <button data-tab="docs">문서</button>
     <button data-tab="settings">설정</button>
   </nav>
@@ -240,6 +248,7 @@
             <button class="small" id="btnReset" title="기획 담당과의 대화를 새로 시작 (진행 파일은 유지)">새 대화</button>
           </span>
         </div>
+        <div class="run-stats muted" id="runStats" style="font-size:12.5px;margin:4px 0"></div>
         <div class="limit-warn" id="limitWarn" hidden></div>
         <div class="now" id="now"><span class="who">지금</span><span class="what muted">작업 없음</span></div>
         <div class="feed" id="feed"></div>
@@ -261,6 +270,16 @@
       <section class="card"><h2>최근 변경된 파일</h2><ul class="list" id="pgFiles"></ul></section>
     </div>
     <p class="muted" style="font-size:12px;margin:0" id="pgAt"></p>
+  </div>
+
+  <!-- ===== 질의 ===== -->
+  <div data-panel="qa" hidden>
+    <section class="card">
+      <h2>질의 · 답변</h2>
+      <p class="muted" style="font-size:12.5px;margin:0">작업 중에 보낸 질문은 개발 담당의 현재 작업이 끝나는 대로 전달되고, 답변은 여기에만 표시됩니다.</p>
+      <div class="chat"><textarea id="qaInput" placeholder="기획 담당에게 질문·지시 (Enter 보내기, Shift+Enter 줄바꿈)"></textarea><button class="primary" id="qaSend">보내기</button></div>
+      <div id="qaList"><p class="empty muted">아직 질의가 없습니다</p></div>
+    </section>
   </div>
 
   <!-- ===== 문서 ===== -->
@@ -395,6 +414,7 @@ function showTab(t) {
   document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
   document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== t);
   try { localStorage.setItem("devagent.tab", t); } catch {}
+  if (t === "qa") markQaSeen();
 }
 document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
 function openInDocs(p) { showTab("docs"); openDoc(p); }
@@ -747,12 +767,12 @@ function evHtml(e) {
   if (e.src === "developer" && !dev) return "";
   const who = WHO(e.src);
   // 개발 → 기획 질문 / 기획 → 개발 답변은 눈에 띄게
-  if (e.kind === "message" && e.src === "developer" && /[기획 질문]/.test(e.text || "")) {
+  if (e.kind === "message" && e.src === "developer" && /\[기획 질문\]/.test(e.text || "")) {
     if (!dev) return "";
     return `<div class="ev msg developer ask"><div class="who">❓ 개발 담당 → 기획 담당 질문</div><div class="bubble md">${md(e.text)}</div></div>`;
   }
-  if (e.kind === "command" && /[기획 답변]/.test(e.text || "")) {
-    const m = (e.text.match(/[기획 답변]([sS]*?)(?:"s+--|"s*$|\\"s|$)/) || [])[1] || e.text;
+  if (e.kind === "command" && /\[기획 답변\]/.test(e.text || "")) {
+    const m = (e.text.match(/\[기획 답변\]([\s\S]*?)(?:"\s+--|"\s*$|\\"\s|$)/) || [])[1] || e.text;
     return `<div class="ev msg planner answer"><div class="who">💬 기획 담당 → 개발 담당 답변</div><div class="bubble">${esc(m.trim())}</div></div>`;
   }
   switch (e.kind) {
@@ -771,10 +791,52 @@ function evHtml(e) {
     case "subagent": return `<div class="ev line"><span class="ic">⑂</span><span class="tx">${esc(e.text)}</span><span class="src">${esc(who)}</span></div>`;
     case "todo": return `<div class="ev"><div class="who">${esc(who)} · 할 일</div><ul class="todo">${(e.items || []).map((t) => `<li class="${t.done ? "muted" : ""}">${t.done ? "☑" : "☐"} ${esc(t.text)}</li>`).join("")}</ul></div>`;
     case "error": return `<div class="ev err"><div class="bubble">⚠ ${esc(e.text)}</div></div>`;
+    case "session": return `<div class="ev sys">— ${esc(WHO(e.src))} 세션 ${e.note ? esc(e.note) : "종료"} · ${fmtDur(e.ms)} · ${e.counted ? fmtTok(e) : "토큰 미집계"} · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
+    case "qa-sent": return `<div class="ev sys">— 💬 질의 ${e.queued ? "대기열에 추가" : "전달"}: ${esc((e.text || "").slice(0, 60))} · <span class="qa-link" onclick="showTab('qa')">질의 탭</span> —</div>`;
+    case "qa-answer": return `<div class="ev sys">— ✅ 질의 답변 도착 · <span class="qa-link" onclick="showTab('qa')">질의 탭에서 보기</span> · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
     case "system": return `<div class="ev sys">— ${esc(e.text)} · ${new Date(e.ts).toLocaleTimeString()} —</div>`;
   }
   return "";
 }
+function fmtDur(ms) { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${Math.round((ms || 0) / 1000)}초` : m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간 ${m % 60}분`; }
+function fmtN(n) { n = n || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n); }
+function fmtTok(x) { return `입력 ${fmtN(x.in)}${x.cached ? ` (+캐시 ${fmtN(x.cached)})` : ""} / 출력 ${fmtN(x.out)}`; }
+function renderStats(v) {
+  const s = v.stats; if (!s) return;
+  const p = s.planner, d = s.developer, now = Date.now();
+  const live = (v.status === "running" && v.startedAt ? now - v.startedAt : 0);
+  const devLive = v.devStartedAt ? now - v.devStartedAt : 0;
+  const tot = { in: p.in + d.in, out: p.out + d.out, cached: p.cached + d.cached };
+  $("runStats").innerHTML = [
+    `<b>기획</b> ${fmtDur(p.ms + live)} · ${p.n}회 · ${fmtTok(p)}`,
+    `<b>개발</b> ${fmtDur(d.ms + devLive)} · ${d.n}회 · ${fmtTok(d)}`,
+    `<b>합계</b> ${fmtDur(p.ms + live)} · ${fmtTok(tot)}`,
+  ].join(" &nbsp;|&nbsp; ") + `<span title="집계 시작 시각"> &nbsp;(${new Date(s.since).toLocaleDateString("ko-KR")}부터)</span>`;
+}
+// ---------- 질의 탭 ----------
+let qaCache = [], qaSig = "";
+const QA_STATUS = { queued: "대기열 (개발 작업이 끝나면 전달)", asked: "답변 작성 중…", answered: "답변 완료", cancelled: "취소됨 (중지)" };
+function qaSeen() { try { return Number(localStorage.getItem("devagent.qaSeen")) || 0; } catch { return 0; } }
+function markQaSeen() { try { localStorage.setItem("devagent.qaSeen", String(Date.now())); } catch {} renderQaBadge(); }
+function renderQaBadge() {
+  const n = qaCache.filter((e) => e.status === "answered" && e.answeredAt > qaSeen()).length;
+  const b = $("qaBadge"); b.hidden = !n; b.textContent = n;
+}
+function renderQa(list) {
+  qaCache = list || [];
+  const sig = qaCache.map((e) => e.id + e.status).join();
+  if (sig !== qaSig) {
+    qaSig = sig;
+    $("qaList").innerHTML = qaCache.length ? qaCache.slice().reverse().map((e) => `<div class="qa-item ${e.status === "answered" ? "" : "pending"}">
+      <div class="q">${esc(e.q)}</div>
+      <div class="meta">${new Date(e.ts).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${QA_STATUS[e.status] || e.status}${e.answeredAt ? ` · ${fmtDur(e.answeredAt - e.ts)} 후 답변` : ""}${e.how ? ` · ${esc(e.how)}` : ""}</div>
+      <div class="a ${e.answer ? "md" : ""}">${e.answer ? md(e.answer) : QA_STATUS[e.status] || ""}</div></div>`).join("") : `<p class="empty muted">아직 질의가 없습니다</p>`;
+    if (!$("qaList").closest("[data-panel]").hidden) markQaSeen();
+  }
+  renderQaBadge();
+}
+$("qaSend").onclick = () => { const t = $("qaInput").value.trim(); if (!t) return; $("qaInput").value = ""; runAction("send", t); };
+$("qaInput").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("qaSend").click(); } };
 function renderFeed(all) {
   const f = $("feed"), atBottom = f.scrollHeight - f.scrollTop - f.clientHeight < 60;
   if (all) f.innerHTML = feedEvents.map(evHtml).join("");
@@ -786,7 +848,10 @@ function renderRun(v) {
   const [label, cls] = RUN_LABEL[v.status] || RUN_LABEL.idle;
   $("runPill").className = "pill " + cls; $("runText").textContent = label;
   const sub = [];
-  if (v.status === "running" && v.startedAt) sub.push(`${Math.max(0, Math.floor((Date.now() - v.startedAt) / 60000))}분째`);
+  if (v.status === "running" && v.startedAt) sub.push(`이번 기획 턴 ${fmtDur(Date.now() - v.startedAt)}째`);
+  if (v.devStartedAt) sub.push(`개발 세션 ${fmtDur(Date.now() - v.devStartedAt)}째`);
+  if (v.queue && v.status === "running") sub.push(v.devBusy ? "개발 담당 작업이 끝나면 메시지 전달" : "메시지 전달 중");
+  renderStats(v); renderQa(v.qa);
   if (v.continues) sub.push(`자동 계속 ${v.continues}회`);
   if (v.queue) sub.push(`보낼 메시지 ${v.queue}개 대기`);
   if (v.status === "error" && v.error) sub.push(v.error.slice(0, 120));

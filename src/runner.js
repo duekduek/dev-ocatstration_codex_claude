@@ -33,7 +33,81 @@ function state(dir) {
   return runs.get(key);
 }
 
+// ---------- 소요시간·토큰 집계 (.devagent/stats.json) ----------
+const ROLE_KO = { planner: "기획", developer: "개발" };
+const blankTot = () => ({ ms: 0, in: 0, out: 0, cached: 0, n: 0 });
+function loadStats(st) {
+  if (!st.stats) { const s = readJson(path.join(devDir(st.dir), "stats.json"), {}); st.stats = { planner: { ...blankTot(), ...s.planner }, developer: { ...blankTot(), ...s.developer }, since: s.since || Date.now() }; }
+  return st.stats;
+}
+const saveStats = (st) => { try { fs.writeFileSync(path.join(devDir(st.dir), "stats.json"), JSON.stringify(st.stats)); } catch {} };
+// 토큰 사용 보고: Claude result.usage / Codex turn.completed.usage
+function addTokens(cur, u, tool) {
+  if (!cur || !u) return;
+  if (tool === "codex") { const c = u.cached_input_tokens || 0; cur.in += Math.max(0, (u.input_tokens || 0) - c); cur.cached += c; }
+  else { cur.in += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0); cur.cached += u.cache_read_input_tokens || 0; }
+  cur.out += u.output_tokens || 0; cur.counted = true;
+}
+const sessStart = (tool) => ({ t0: Date.now(), tool, in: 0, out: 0, cached: 0 });
+function sessEnd(st, src, cur, ms, note) {
+  if (!cur) return;
+  ms = ms || Date.now() - cur.t0;
+  const tot = loadStats(st)[src];
+  tot.ms += ms; tot.in += cur.in; tot.out += cur.out; tot.cached += cur.cached; tot.n++;
+  saveStats(st);
+  push(st, { src, kind: "session", tool: cur.tool, ms, in: cur.in, out: cur.out, cached: cur.cached, counted: !!cur.counted, note, text: `${ROLE_KO[src]} 세션 종료` });
+}
+// 개발 담당 세션 추적 (dev.jsonl): 시작/끝
+function devTrack(st, j) {
+  if (st.replaying) return;
+  st.devLast = Date.now();
+  const startEv = (j.type === "system" && j.subtype === "init") || j.type === "turn.started";
+  const endEv = j.type === "result" || j.type === "turn.completed" || j.type === "turn.failed";
+  const tool = j.type === "system" || j.type === "result" ? "claude" : "codex";
+  if (startEv && !st.devCur) st.devCur = sessStart(tool);
+  if (startEv) st.devBusy = true;
+  if (endEv) {
+    if (!st.devCur) st.devCur = sessStart(tool);
+    addTokens(st.devCur, j.usage, tool);
+    sessEnd(st, "developer", st.devCur, j.duration_ms, j.type === "turn.failed" || j.is_error ? "오류" : null);
+    st.devCur = null; st.devBusy = false;
+  }
+}
+
+// ---------- 사용자 질의 / 답변 (.devagent/qa.json) ----------
+const QA_NOTE = "\n\n(이 메시지에 대한 답이나 반영 결과는 먼저 `[답변]`으로 시작하는 메시지 하나로 사용자에게 짧게 써라. 그 다음에 하던 작업을 이어가.)";
+const qaFile = (st) => path.join(devDir(st.dir), "qa.json");
+// 파일을 밖에서 고친 경우(지난 기록 옮기기 등)도 반영되도록 수정 시각이 바뀌면 다시 읽는다
+const mtimeOf = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
+function loadQa(st) {
+  const m = mtimeOf(qaFile(st));
+  if (!st.qa || m !== st.qaMtime) { st.qa = readJson(qaFile(st), []); st.qaMtime = m; }
+  return st.qa;
+}
+const saveQa = (st) => { try { fs.writeFileSync(qaFile(st), JSON.stringify(st.qa.slice(-200))); st.qaMtime = mtimeOf(qaFile(st)); } catch {} };
+function qaAdd(st, text, queued) {
+  const e = { id: Date.now() + "-" + Math.random().toString(36).slice(2, 6), q: text, ts: Date.now(), status: queued ? "queued" : "asked" };
+  loadQa(st).push(e); if (!queued) st.qaActive = e.id; saveQa(st); return e;
+}
+// 대기열에 있던 질의를 이번 턴으로 전달
+function qaDeliver(st) {
+  const e = loadQa(st).find((x) => x.status === "queued");
+  if (e) { e.status = "asked"; e.askedAt = Date.now(); st.qaActive = e.id; saveQa(st); }
+}
+function qaAnswer(st, text, how) {
+  const e = st.qaActive && loadQa(st).find((x) => x.id === st.qaActive);
+  st.qaActive = null;
+  if (!e) return;
+  e.status = "answered"; e.answer = String(text || "").trim() || "(답변 없음)"; e.answeredAt = Date.now(); if (how) e.how = how;
+  saveQa(st);
+  push(st, { src: "system", kind: "qa-answer", id: e.id, text: "질의에 대한 답변이 도착했습니다 (질의 탭)" });
+}
+
 function push(st, ev) {
+  // 질의에 대한 [답변] 메시지는 진행 피드가 아니라 질의 탭으로 보낸다
+  if (st.qaActive && ev.src === "planner" && ev.kind === "message" && !ev.sub && /\[답변\]/.test(ev.text || "")) {
+    return qaAnswer(st, ev.text.slice(ev.text.indexOf("[답변]") + 4));
+  }
   ev.ts = ev.ts || Date.now();
   ev.seq = ++st.seq;
   st.events.push(ev);
@@ -114,6 +188,13 @@ function feed(st, src, tool, line) {
   line = line.trim();
   if (!line.startsWith("{")) return;
   let j; try { j = JSON.parse(line); } catch { return; }
+  if (src === "developer") devTrack(st, j);
+  else if (src === "planner") {
+    if (j.type === "result") addTokens(st.planCur, j.usage, "claude");
+    else if (j.type === "turn.completed") addTokens(st.planCur, j.usage, "codex");
+    // 기획 담당이 개발 명령을 실행하기 시작 → 개발 담당 작업 중으로 본다 (dev.jsonl 첫 줄이 나오기 전 틈)
+    if (/dev\.jsonl/.test(line) && /"(command_execution|tool_use)"/.test(line) && /item\.started|"assistant"/.test(line)) { st.devBusy = true; st.devLast = Date.now(); }
+  }
   (tool === "claude" || j.type === "assistant" || j.type === "system" || j.type === "rate_limit_event" || j.type === "result" ? fromClaude : fromCodex)(st, src, j);
 }
 function saveSession(st) { try { fs.writeFileSync(path.join(devDir(st.dir), "session.json"), JSON.stringify(st.session)); } catch {} }
@@ -148,7 +229,22 @@ function pollDev(st) {
   devOffsets.set(st.dir, off + Buffer.byteLength(text.slice(0, lastNl + 1)));
   st.replaying = first; // 처음 읽는 지난 기록의 한도 메시지는 이미 지난 일이라 무시
   try { for (const l of text.slice(0, lastNl).split("\n")) feed(st, "developer", null, l); } finally { st.replaying = false; }
+  maybeInterrupt(st);
 }
+
+// 실행 중에 사용자 메시지가 들어오면: 개발 담당이 일하는 중이 아닐 때 기획 턴을 멈추고 바로 전달한다
+// (기획 턴 하나가 개발 지시를 여러 번 포함해 한 시간 넘게 이어질 수 있어서 턴 끝까지 기다리면 너무 늦다)
+const DEV_STALE = 15 * 60000;
+function maybeInterrupt(st) {
+  if (!st.proc || !st.queue.length || st.interrupting || st.stopping) return;
+  if (st.cfg && st.cfg.interruptOnMessage === false) return;
+  if (st.devBusy && Date.now() - (st.devLast || 0) < DEV_STALE) return;
+  st.interrupting = true;
+  push(st, { src: "system", kind: "system", text: "새 메시지를 바로 전달하려고 진행 중인 기획 턴을 잠시 멈춥니다 (답변 뒤 이어서 진행)" });
+  spawnSync("docker", ["stop", "-t", "5", st.containerName], { encoding: "utf8" });
+  try { st.proc.kill(); } catch {}
+}
+const INTERRUPT_NOTE = "[사용자 메시지] 진행 중이던 네 턴을 사용자 메시지 전달을 위해 중간에 끊었다. 먼저 아래 메시지에 답하거나 반영하고, 끊긴 작업은 git status와 docs/progress.json을 확인해 이어서 진행해.\n\n";
 
 // ---------- 실행 ----------
 const CONTINUE_MSG = "계속 진행해. 사용자에게 진행 여부를 묻지 말고 다음 단계로 바로 진행해. 꼭 사용자 결정이 필요할 때만 마지막 줄에 [질문]을 붙여 물어보고, 모든 phase가 끝나면 마지막 줄에 [완료]를 써.";
@@ -215,13 +311,15 @@ function waitForReset(dir, cfg, until) {
 // 한도로 끊긴 턴을 다시 돌릴 때: 답만 하던 중이었으면 그 메시지를 다시, 아니면 계속 진행
 const nextPrompt = (st) => st.answerOnly || CONTINUE_MSG;
 
-function runTurn(dir, cfg, prompt, { user, build } = {}) {
+function runTurn(dir, cfg, prompt, { user, build, qa } = {}) {
   const st = state(dir);
   if (st.proc) throw new Error("이미 실행 중입니다");
-  if (user) push(st, { src: "user", kind: "message", text: trim(prompt) });
+  if (qa === "deliver") qaDeliver(st);
+  if (qa) { push(st, { src: "user", kind: "qa-sent", text: trim(prompt, 200) }); prompt += QA_NOTE; }
+  else if (user) push(st, { src: "user", kind: "message", text: trim(prompt) });
   syncLimits();
   const wait = fallback.waitUntil(cfg);
-  if (wait) { if (user) st.queue.unshift(prompt); waitForReset(dir, cfg, wait); return st; }
+  if (wait) { if (qa) { st.queue.unshift(prompt.slice(0, prompt.length - QA_NOTE.length)); const e = st.qa.find((x) => x.id === st.qaActive); if (e) e.status = "queued"; st.qaActive = null; saveQa(st); } else if (user) st.queue.unshift(prompt); waitForReset(dir, cfg, wait); return st; }
   clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null;
   const eff = fallback.effective(cfg);
   if (eff.planner.swappedFrom && eff.planner.tool !== (st.applied?.planner || cfg.planner.tool))
@@ -240,6 +338,7 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
   if (existing === "running") throw new Error("이 프로젝트의 기획 담당이 이미 다른 곳(다른 GUI 서버나 창)에서 실행 중입니다. 그쪽에서 중지한 뒤 다시 시도하세요.");
   if (existing) spawnSync("docker", ["rm", "-f", name], { encoding: "utf8" }); // 끝난 채 남은 컨테이너만 정리
   st.status = "running"; st.error = null; st.startedAt = Date.now(); st.lastMessage = ""; st.containerName = name;
+  st.cfg = cfg; st.planCur = sessStart(eff.planner.tool);
   // stdin을 닫아야 함: codex exec는 stdin이 파이프면 끝날 때까지 기다렸다가 프롬프트에 덧붙인다
   const proc = spawn("docker", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
   st.proc = proc;
@@ -255,6 +354,12 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
     st.proc = null;
     pollDev(st); // 개발 담당의 한도 소진도 이번 턴 안에 반영
     refreshUsage(dir, { probe: false }); // 턴이 끝날 때마다 사용량 기록 다시 읽기
+    const interrupted = st.interrupting; st.interrupting = false;
+    if (st.qaActive && !st.limitHit && !st.stopping && !interrupted) qaAnswer(st, st.lastMessage, "턴 마지막 메시지");
+    sessEnd(st, "planner", st.planCur, 0, st.stopping ? "중지" : interrupted ? "메시지로 중단" : null); st.planCur = null;
+    if (st.devCur) { sessEnd(st, "developer", st.devCur, 0, "중단"); st.devCur = null; }
+    st.devBusy = false;
+    if (interrupted && !st.stopping && st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, INTERRUPT_NOTE + next, false, "deliver")); }
     if (st.stopping) { st.stopping = false; st.status = "idle"; push(st, { src: "system", kind: "system", text: "중지됨" }); return; }
     const msg = st.lastMessage || "";
     if (!st.limitHit && code !== 0) limitCheck(st, "planner", eff.planner.tool, errBuf);
@@ -271,7 +376,7 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
       return;
     }
     if (/\[완료\]/.test(msg)) { st.status = "done"; st.continues = 0; st.answerOnly = null; push(st, { src: "system", kind: "system", text: "모든 작업 완료" }); return; }
-    if (st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, next, true)); }
+    if (st.queue.length) { const next = st.queue.shift(); return setImmediate(() => safeTurn(dir, cfg, next, true, "deliver")); }
     if (/\[질문\]/.test(msg)) { st.answerOnly = null; st.status = "waiting"; push(st, { src: "system", kind: "system", text: "기획 담당이 답변을 기다립니다" }); return; }
     // 멈춰 있을 때 보낸 메시지(진행 상황 질문 등)는 답만 하고 멈춘다 — 자동 "계속 진행"이 새 작업을 시작하지 않게
     if (st.answerOnly) { st.answerOnly = null; st.status = "idle"; push(st, { src: "system", kind: "system", text: "답변 완료 (이어서 진행하려면 ▶ 버튼)" }); return; }
@@ -284,8 +389,8 @@ function runTurn(dir, cfg, prompt, { user, build } = {}) {
   });
   return st;
 }
-function safeTurn(dir, cfg, prompt, user) {
-  try { runTurn(dir, cfg, prompt, { user }); }
+function safeTurn(dir, cfg, prompt, user, qa) {
+  try { runTurn(dir, cfg, prompt, { user, qa }); }
   catch (e) { const st = state(dir); st.status = "error"; st.error = e.message; push(st, { src: "system", kind: "error", text: e.message }); }
 }
 
@@ -302,12 +407,15 @@ function send(dir, cfg, text) {
   st.continues = 0;
   // 완료·대기·오류로 멈춰 있을 때 보낸 메시지는 답만 받는다 (작업 중이거나 [질문]에 답하는 경우는 이어서 진행)
   st.answerOnly = !st.proc && ["done", "idle", "error"].includes(st.status) ? text : null;
-  if (st.proc) { st.queue.push(text); push(st, { src: "user", kind: "message", text: trim(text), queued: true }); return st; }
-  return runTurn(dir, cfg, text, { user: true });
+  if (st.proc) { st.queue.push(text); qaAdd(st, text, true); push(st, { src: "user", kind: "qa-sent", text: trim(text, 200), queued: true }); pollDev(st); maybeInterrupt(st); return st; }
+  qaAdd(st, text, false);
+  return runTurn(dir, cfg, text, { user: true, qa: true });
 }
 function stop(dir) {
   const st = state(dir);
   st.queue = [];
+  for (const e of loadQa(st)) if (e.status === "queued") e.status = "cancelled";
+  saveQa(st);
   clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null;
   if (st.status === "limit") st.status = "idle";
   if (st.proc) { st.stopping = true; spawnSync("docker", ["stop", "-t", "3", st.containerName], { encoding: "utf8" }); try { st.proc.kill(); } catch {} }
@@ -466,6 +574,7 @@ function view(dir, since = 0) {
   return {
     status: st.status, error: st.error, session: st.session, startedAt: st.startedAt, queue: st.queue.length, continues: st.continues,
     current: st.current, seq: st.seq, resumeAt: st.resumeAt || null,
+    stats: loadStats(st), qa: loadQa(st).slice(-60), devBusy: !!st.devBusy, devStartedAt: st.devCur ? st.devCur.t0 : null,
     swapped: ["planner", "developer"].filter((r) => st.applied && st.applied[r] !== (st.cfgTools || {})[r]).map((r) => `${r === "planner" ? "기획" : "개발"}: ${TOOL_NAME[st.applied[r]]}로 임시 전환`).join(", "),
     events: st.events.filter((e) => e.seq > since).slice(-300),
   };
