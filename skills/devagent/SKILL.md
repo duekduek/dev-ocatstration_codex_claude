@@ -112,9 +112,45 @@ devagent start --dir <폴더>
 - Codex가 먼저 docs/PLAN.md(phase 계획)를 만들고 승인을 요청한다 → 내용을 보고 승인.
 - 이후 Codex가 phase마다 Claude에게 개발 요청 → 검토 → 통과 시 커밋/push(+Actions 빌드 확인)를 반복한다.
 - 중단 후 재개: 같은 명령을 다시 실행하면 PLAN.md를 읽고 이어서 진행.
-- 사용 한도에 걸리면 Codex가 멈추고 알린다. 한도가 풀린 뒤 다시 start.
+- 사용 한도에 걸리면 다른 도구로 역할을 넘기고, 둘 다 막히면 먼저 풀리는 시각까지 기다렸다가 자동으로 이어간다 (아래 7단계).
 
 GUI를 원하면: `devagent gui --dir <폴더>` (브라우저에서 설정/로그인/시작 버튼 제공).
+
+## 7. 사용 한도 — 초기화·충전했는데 계속 "한도 소진"일 때
+
+devagent는 한도 정보를 계정 단위로 두 파일에 기록하고, 기록된 시각(`until`/`resetsAt`)까지는 그 도구를 쓰지 않는다. 그래서 사용자가 한도를 초기화하거나 크레딧을 충전해도 **기록이 남아 있으면 계속 대기**한다.
+
+- `~/.devagent/limits.json` — 도구별 `{ until, message, at }`. 실행 전 판단에 쓴다.
+- `~/.devagent/usage.json` — 상단 사용량 표시용 `{ five, week, exhausted, retryAt }`. 시작할 때 이 값으로 limits.json을 **다시 채우므로** 둘 다 지워야 한다.
+
+순서:
+1. **먼저 도구가 실제로 풀렸는지 컨테이너에서 직접 확인한다.** 기록만 지우고 시작하면 곧바로 다시 막힌다.
+   ```bash
+   docker run --rm -v devagent-claude-home:/home/node/.claude devagent-<프로젝트> sh -c "claude -p 'say ok'"
+   docker run --rm -v devagent-codex-home:/home/node/.codex devagent-<프로젝트> sh -c "codex exec --skip-git-repo-check 'say ok'"
+   ```
+   `ok`가 오면 풀린 것. "hit your usage limit … try again at HH:MM"이면 실제로 아직 막힌 것이다(시각은 UTC일 수 있음 → 현지 시각으로 바꿔 안내).
+2. 풀린 도구만 두 파일에서 지운다 (예: claude).
+   ```bash
+   node -e "const h=require('os').homedir()+'/.devagent/',fs=require('fs'),t='claude';const L=JSON.parse(fs.readFileSync(h+'limits.json','utf8'));delete L[t];fs.writeFileSync(h+'limits.json',JSON.stringify(L));const g=JSON.parse(fs.readFileSync(h+'usage.json','utf8'));if(g[t]){delete g[t].exhausted;delete g[t].retryAt;for(const w of ['five','week'])if(g[t][w])g[t][w].used=0}fs.writeFileSync(h+'usage.json',JSON.stringify(g))"
+   ```
+3. GUI를 새로고침하고 ▶(이어서 진행)을 누른다. 진행 로그에 기획 담당 명령이 찍히는지 확인한다.
+
+안내할 점:
+- Codex는 **ChatGPT 계정 로그인**으로 돈다. platform.openai.com의 **API 크레딧**을 충전해도 반영되지 않는다. ChatGPT 쪽 크레딧/요금제(chatgpt.com/settings/usage)만 적용된다.
+- 자동 재개(대기 후 이어가기)는 ▶와 달리 Docker를 켜지 않을 수 있다. 재개 시각에 Docker가 꺼져 있으면 "docker API 연결 실패"로 멈추므로 ▶를 다시 누른다.
+
+## 8. 에이전트용 스킬 추가
+
+호스트에 설치한 스킬(`~/.claude/skills`, `~/.agents/skills`)은 컨테이너 안 에이전트에게 보이지 않는다. 컨테이너는 공유 볼륨을 홈으로 쓰므로 볼륨에 복사한다 (모든 devagent 프로젝트에 적용).
+
+```bash
+npx skills add <owner/repo@skill> -g -y      # 호스트에 먼저 설치 (설치 수·출처 확인 후)
+docker run --rm -v ~/.agents/skills/<skill>:/src:ro -v devagent-claude-home:/c -v devagent-codex-home:/x devagent-<프로젝트> \
+  sh -c "mkdir -p /c/skills /x/skills && cp -r /src /c/skills/<skill> && cp -r /src /x/skills/<skill>"
+```
+
+스킬을 쓰게 하려면 기획 담당에게 보내는 지시(질의 탭)에 스킬 이름을 적는다. 호스트에서 스킬을 업데이트하면 다시 복사해야 한다.
 
 ## 주의
 
