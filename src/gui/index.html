@@ -67,13 +67,13 @@
   .pg-big { font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
   .progress { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; margin: 6px 0 12px; }
   .progress span { display: block; height: 100%; background: var(--ok); transition: width .4s; }
-  .phases { list-style: none; padding: 0; margin: 0; }
+  .phases { list-style: none; padding: 0; margin: 0; max-height: 62vh; overflow-y: auto; position: relative; }
   .ph { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--card); }
   .ph.cur { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--accent-soft); }
   .ph.done { background: var(--soft); }
   .ph.done .ph-title { color: var(--muted); }
   .ph-head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-  .ph-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--soft); color: var(--muted); flex: none; }
+  .ph-num { min-width: 26px; padding: 0 4px; box-sizing: border-box; width: auto; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--soft); color: var(--muted); flex: none; }
   .ph.done .ph-num { background: var(--ok-soft); color: var(--ok); }
   .ph.cur .ph-num { background: var(--accent); color: #fff; }
   .ph-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; }
@@ -131,6 +131,9 @@
   .feed-tools input { width: auto; }
   .qa-item { border: 1px solid var(--line, #ddd); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
   .qa-item .q { font-weight: 600; white-space: pre-wrap; }
+  .qa-item .q.long { cursor: pointer; }
+  .qa-item .q.long.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .qa-item .q-more { font-size: 12px; color: var(--muted); cursor: pointer; margin-top: 2px; }
   .qa-item .meta { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
   .qa-item .a { border-top: 1px dashed var(--line, #ddd); padding-top: 8px; }
   .qa-item.pending .a { color: var(--muted); font-style: italic; }
@@ -413,6 +416,10 @@ let meta, cfgCache = null;
 function showTab(t) {
   document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
   document.querySelectorAll("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== t);
+  if (t === "run" && typeof phScrollKey !== "undefined" && phScrollKey == null) {
+    const l = document.querySelector(".phases"), c = l && l.querySelector(".ph.cur");
+    if (l && l.clientHeight) { l.scrollTop = c ? c.offsetTop - 4 : 0; phScrollKey = phWantKey; }
+  }
   try { localStorage.setItem("devagent.tab", t); } catch {}
   if (t === "qa") markQaSeen();
 }
@@ -687,13 +694,13 @@ function renderPhases(ph) {
       <span class="muted" style="float:right;font-size:12px">${ph.source === "progress.json" ? "기획 담당 기록 기준" : "PLAN.md 기준"}</span></div>
     <div class="progress" style="margin-top:6px"><span style="width:${pct}%"></span></div>
     <div style="font-size:13px;margin-bottom:6px">${cur ? `현재: <b>${cur.id ? `Phase ${cur.id}. ` : ""}${esc(cur.title)}</b> <span class="badge ${stOf(cur.status)[1]}">${stOf(cur.status)[0]}</span>${!isActive() && ["in_progress", "review", "fix"].includes(cur.status) ? ' <span class="muted" style="font-size:12px">— 지금 실행 중이 아닙니다. ▶ 이어서 진행을 누르세요</span>' : ""}` : "<b>모든 phase 완료 🎉</b>"}</div>
-    <ol class="phases">${ph.items.map((x, i) => {
+    <ol class="phases">${phaseOrder(ph).map((i) => { const x = ph.items[i];
       const k = x.id ?? x.title, open = openPhases.has(k), st = stOf(x.status);
       const td = x.tasks.filter((t) => t.done).length;
       const meta = [x.tasks.length ? `작업 ${td}/${x.tasks.length}` : "", x.doneAt ? `완료 ${ago(Date.parse(x.doneAt))}` : x.startedAt ? `시작 ${ago(Date.parse(x.startedAt))}` : "",
         x.commit ? `<code>${esc(x.commit)}</code>` : "", link(x.report, "보고서"), link(x.review, "리뷰")].filter(Boolean).join(" · ");
       return `<li class="ph ${x.status}${i === ph.current ? " cur" : ""}" data-k="${esc(k)}">
-        <div class="ph-head"><span class="ph-num">${x.done ? "✓" : esc(x.id ?? i + 1)}</span><span class="ph-title">${esc(x.title)}</span><span class="badge ${st[1]}">${st[0]}</span>${x.tasks.length ? `<span class="mini"><span style="width:${Math.round(td / x.tasks.length * 100)}%"></span></span>` : ""}</div>
+        <div class="ph-head"><span class="ph-num">${esc(x.id ?? i + 1)}</span><span class="ph-title">${esc(x.title)}</span><span class="badge ${st[1]}">${st[0]}</span>${x.tasks.length ? `<span class="mini"><span style="width:${Math.round(td / x.tasks.length * 100)}%"></span></span>` : ""}</div>
         ${meta ? `<div class="ph-meta">${meta}</div>` : ""}
         ${open && (x.goal || x.tasks.length || x.note || x.requirements?.length) ? `<div class="ph-body">
           ${x.goal ? `<div>${esc(x.goal)}</div>` : ""}
@@ -702,10 +709,24 @@ function renderPhases(ph) {
           ${x.note ? `<div class="note">${esc(x.note)}</div>` : ""}</div>` : ""}
       </li>`;
     }).join("")}</ol>`;
+  const list = $("pgPhase").querySelector(".phases");
+  if (list) {
+    const key = phWantKey = dir() + "|" + ph.current;
+    if (key !== phScrollKey || renderPhases.top == null) {
+      if (list.clientHeight) phScrollKey = key; // 탭이 숨겨져 있으면 보일 때 다시 맞춘다
+      const el = list.querySelector(".ph.cur");
+      list.scrollTop = el ? el.offsetTop - 4 : 0;
+    } else list.scrollTop = renderPhases.top;
+    list.onscroll = () => { renderPhases.top = list.scrollTop; };
+    renderPhases.top = list.scrollTop;
+  }
   $("pgPhase").querySelectorAll(".ph-head").forEach((h) => h.onclick = () => {
     const k = h.parentElement.dataset.k; openPhases.has(k) ? openPhases.delete(k) : openPhases.add(k); renderPhases(ph);
   });
 }
+// 역순(마지막 phase가 위, 1이 아래). 열면 진행 중 phase로 스크롤
+function phaseOrder(ph) { return ph.items.map((_, i) => i).reverse(); }
+var phScrollKey = null, phWantKey = null;
 let pgPending = false;
 async function loadProgress() {
   if (!dir()) return;
@@ -822,13 +843,19 @@ function renderQaBadge() {
   const n = qaCache.filter((e) => e.status === "answered" && e.answeredAt > qaSeen()).length;
   const b = $("qaBadge"); b.hidden = !n; b.textContent = n;
 }
+function qaLong(t) { return (t || "").length > 160 || (t || "").split(/\r?\n/).length > 3; }
+$("qaList").addEventListener("click", (ev) => {
+  const it = ev.target.closest(".qa-item"); if (!it || !ev.target.closest(".q.long, .q-more")) return;
+  const q = it.querySelector(".q.long"), open = q.classList.toggle("clamp") === false;
+  it.querySelector(".q-more").textContent = open ? "▴ 접기" : "▾ 원문 보기";
+});
 function renderQa(list) {
   qaCache = list || [];
   const sig = qaCache.map((e) => e.id + e.status).join();
   if (sig !== qaSig) {
     qaSig = sig;
     $("qaList").innerHTML = qaCache.length ? qaCache.slice().reverse().map((e) => `<div class="qa-item ${e.status === "answered" ? "" : "pending"}">
-      <div class="q">${esc(e.q)}</div>
+      ${qaLong(e.q) ? `<div class="q long clamp" title="클릭하면 원문 보기">${esc(e.q)}</div><div class="q-more">▾ 원문 보기</div>` : `<div class="q">${esc(e.q)}</div>`}
       <div class="meta">${new Date(e.ts).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${QA_STATUS[e.status] || e.status}${e.answeredAt ? ` · ${fmtDur(e.answeredAt - e.ts)} 후 답변` : ""}${e.how ? ` · ${esc(e.how)}` : ""}</div>
       <div class="a ${e.answer ? "md" : ""}">${e.answer ? md(e.answer) : QA_STATUS[e.status] || ""}</div></div>`).join("") : `<p class="empty muted">아직 질의가 없습니다</p>`;
     if (!$("qaList").closest("[data-panel]").hidden) markQaSeen();
