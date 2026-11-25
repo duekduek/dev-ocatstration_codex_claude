@@ -760,7 +760,7 @@ function setStartLabel() {
 }
 const TOOLNAME = () => ({ planner: cfgCache ? (cfgCache.planner.tool === "claude" ? "Claude" : "Codex") : "기획", developer: cfgCache ? (cfgCache.developer.tool === "codex" ? "Codex" : "Claude") : "개발" });
 const WHO = (src) => src === "planner" ? `기획 · ${TOOLNAME().planner}` : src === "developer" ? `개발 · ${TOOLNAME().developer}` : src === "user" ? "나" : "";
-const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], limit: ["한도 초기화 대기", "waiting"], done: ["완료", "done"], error: ["오류", "error"] };
+const RUN_LABEL = { idle: ["대기", ""], running: ["작업 중", "running"], waiting: ["답변 기다리는 중", "waiting"], limit: ["한도 초기화 대기", "waiting"], starting: ["Docker 켜는 중", "running"], done: ["완료", "done"], error: ["오류", "error"] };
 
 function evHtml(e) {
   const detail = $("showDetail").checked, dev = $("showDev").checked;
@@ -859,8 +859,8 @@ function renderRun(v) {
   if (v.status === "limit" && v.resumeAt) sub.push(`${new Date(v.resumeAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}에 자동 재개`);
   if (v.swapped) sub.push(v.swapped);
   $("runSub").textContent = sub.join(" · ");
-  $("btnStop").disabled = v.status !== "running" && v.status !== "limit";
-  $("btnStart").disabled = v.status === "running";
+  $("btnStop").disabled = !["running", "limit", "starting"].includes(v.status);
+  $("btnStart").disabled = v.status === "running" || v.status === "starting";
   $("btnReset").disabled = v.status === "running";
   $("chatBox").classList.toggle("waiting", v.status === "waiting");
   lastRun = v; setStartLabel();

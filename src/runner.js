@@ -402,8 +402,56 @@ function safeTurn(dir, cfg, prompt, user, qa) {
   catch (e) { const st = state(dir); st.status = "error"; st.error = e.message; push(st, { src: "system", kind: "error", text: e.message }); }
 }
 
+// ---------- Docker 자동 실행: 꺼져 있으면 Docker Desktop을 켜고 준비될 때까지 기다린다 ----------
+const dockerUp = () => new Promise((ok) => {
+  const p = spawn("docker", ["info", "--format", "{{.ServerVersion}}"], { stdio: "ignore" });
+  const t = setTimeout(() => { try { p.kill(); } catch {} ok(false); }, 15000);
+  p.on("close", (c) => { clearTimeout(t); ok(c === 0); });
+  p.on("error", () => { clearTimeout(t); ok(false); });
+});
+function launchDockerDesktop() {
+  const opt = { stdio: "ignore", detached: true };
+  if (process.platform === "win32") {
+    const exe = [process.env.ProgramFiles, process.env.ProgramW6432, "C:\\Program Files"].filter(Boolean)
+      .map((d) => path.join(d, "Docker", "Docker", "Docker Desktop.exe")).find((f) => fs.existsSync(f));
+    if (!exe) return false;
+    spawn(exe, [], opt).unref(); return true;
+  }
+  if (process.platform === "darwin") { spawn("open", ["-a", "Docker"], opt).unref(); return true; }
+  spawn("systemctl", ["--user", "start", "docker-desktop"], opt).on("error", () => {}).unref?.(); return true;
+}
+const DOCKER_WAIT = 4 * 60000;
+async function ensureDocker(st) {
+  if (await dockerUp()) return true;
+  st.status = "starting"; st.startingDocker = true;
+  if (!launchDockerDesktop()) { push(st, { src: "system", kind: "error", text: "Docker Desktop을 찾지 못했습니다. 직접 실행한 뒤 다시 ▶을 눌러 주세요." }); return false; }
+  push(st, { src: "system", kind: "system", text: "Docker가 꺼져 있어 Docker Desktop을 실행합니다 (WSL 포함, 보통 1~2분)" });
+  const t0 = Date.now();
+  while (Date.now() - t0 < DOCKER_WAIT) {
+    await new Promise((r) => setTimeout(r, 4000));
+    if (!st.startingDocker) return false; // 중지됨
+    if (await dockerUp()) { push(st, { src: "system", kind: "system", text: `Docker 준비 완료 (${Math.round((Date.now() - t0) / 1000)}초)` }); return true; }
+  }
+  push(st, { src: "system", kind: "error", text: "Docker Desktop이 4분 안에 준비되지 않았습니다. Docker Desktop 창을 확인한 뒤 다시 ▶을 눌러 주세요." });
+  return false;
+}
+
 // 시작/이어하기
 function start(dir, cfg, prompt) {
+  const st = state(dir);
+  if (st.startingDocker) return st;
+  st.startingDocker = true; st.status = "starting";
+  ensureDocker(st).then((ok) => {
+    const cancelled = !st.startingDocker;
+    st.startingDocker = false;
+    if (cancelled) return;
+    if (!ok) { st.status = "error"; st.error = "Docker가 준비되지 않았습니다"; return; }
+    st.status = "idle";
+    try { startNow(dir, cfg, prompt); } catch (e) { st.status = "error"; st.error = e.message; push(st, { src: "system", kind: "error", text: e.message }); }
+  });
+  return st;
+}
+function startNow(dir, cfg, prompt) {
   const st = state(dir);
   st.continues = 0; st.answerOnly = null;
   const p = prompt || (st.session?.id ? "이어서 진행해. docs/PLAN.md와 docs/progress.json을 확인하고 남은 phase를 계속 진행해." : null);
@@ -415,7 +463,7 @@ function send(dir, cfg, text) {
   st.continues = 0;
   // 완료·대기·오류로 멈춰 있을 때 보낸 메시지는 답만 받는다 (작업 중이거나 [질문]에 답하는 경우는 이어서 진행)
   st.answerOnly = !st.proc && ["done", "idle", "error"].includes(st.status) ? text : null;
-  if (st.proc) { st.queue.push(text); qaAdd(st, text, true); push(st, { src: "user", kind: "qa-sent", text: trim(text, 200), queued: true }); pollDev(st); maybeInterrupt(st); return st; }
+  if (st.proc || st.startingDocker) { st.queue.push(text); qaAdd(st, text, true); push(st, { src: "user", kind: "qa-sent", text: trim(text, 200), queued: true }); pollDev(st); maybeInterrupt(st); return st; }
   qaAdd(st, text, false);
   return runTurn(dir, cfg, text, { user: true, qa: true });
 }
@@ -426,6 +474,7 @@ function stop(dir) {
   saveQa(st);
   clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null;
   if (st.status === "limit") st.status = "idle";
+  if (st.startingDocker) { st.startingDocker = false; st.status = "idle"; push(st, { src: "system", kind: "system", text: "중지됨 (Docker Desktop은 켜진 채로 둡니다)" }); }
   if (st.proc) { st.stopping = true; spawnSync("docker", ["stop", "-t", "3", st.containerName], { encoding: "utf8" }); try { st.proc.kill(); } catch {} }
   else st.status = "idle";
   return st;
