@@ -301,13 +301,58 @@ function syncLimits() {
   }
 }
 
-// 기획 담당이 쓸 도구가 모두 한도에 걸려 있으면 풀리는 시각까지 기다렸다가 자동으로 이어간다
+// ---------- 한도 실제 확인: 기록만 믿지 않고 아주 짧은 요청을 보내 진짜 막혔는지 본다 ----------
+// (사용자가 한도를 초기화·충전해도 기록된 시각까지 계속 기다리던 문제)
+const LIMIT_OUT = /usage[_ ]limit|hit your .{0,20}limit|limit reached|rate[_ ]limit|out of (extra )?usage|credit balance/i;
+async function toolAvailable(dir, tool) {
+  if (!hasCompose(dir)) return false;
+  require("./core").ensureVolumes();
+  const args = tool === "codex"
+    ? ["compose", "run", "--rm", "-T", "dev", "bash", "-lc", 'cd /tmp && codex exec --json --skip-git-repo-check -s read-only "Reply with a single dot." 2>&1']
+    : ["compose", "run", "--rm", "-T", "dev", "claude", "-p", "Reply with a single dot.", "--model", "haiku", "--max-turns", "1", "--output-format", "json"];
+  const r = await runAsync(args, dir, 120000);
+  if (r.code !== 0) return false;
+  if (tool === "claude") { try { const j = JSON.parse(r.out.trim().split("\n").pop()); return !j.is_error && !LIMIT_OUT.test(String(j.result || "")); } catch { return false; } }
+  return !LIMIT_OUT.test(r.out) && /"turn\.completed"|"type":"turn.completed"/.test(r.out);
+}
+// 한도 기록 지우기: limits.json + usage.json(시작할 때 limits.json을 다시 채우므로 둘 다)
+function clearLimit(tool) {
+  fallback.clear(tool);
+  const g = readJson(GLOBAL_USAGE, {});
+  if (g[tool]) { delete g[tool].exhausted; delete g[tool].retryAt; for (const w of ["five", "week"]) if (g[tool][w] && g[tool][w].used >= 100) g[tool][w] = { ...g[tool][w], used: 0 }; g[tool].at = Date.now(); writeGlobal(g); }
+}
+// 막힌 것으로 기록된 도구를 실제로 확인 → 풀린 도구 목록
+async function verifyLimits(dir, st) {
+  const freed = [];
+  for (const t of ["codex", "claude"]) {
+    if (!fallback.exhaustedUntil(t)) continue;
+    if (await toolAvailable(dir, t)) { clearLimit(t); freed.push(t); push(st, { src: "system", kind: "system", text: `${TOOL_NAME[t]} 실제 확인: 사용 가능 → 한도 기록을 지우고 이어서 진행합니다` }); }
+  }
+  return freed;
+}
+const LIMIT_RECHECK = 15 * 60000;
+
+// 기획 담당이 쓸 도구가 모두 한도에 걸려 있으면: 먼저 실제로 확인하고, 정말 막혀 있으면
+// 풀리는 시각까지 기다리되 그 사이에도 15분마다 다시 확인해서 풀리면 바로 이어간다
 function waitForReset(dir, cfg, until) {
   const st = state(dir);
   clearTimeout(st.resumeTimer);
   st.status = "limit"; st.resumeAt = until;
-  push(st, { src: "system", kind: "system", text: `Claude·Codex 모두 사용량 한도 소진 → ${fallback.hhmm(until)}에 자동으로 이어서 진행합니다` });
-  st.resumeTimer = setTimeout(() => { st.resumeTimer = null; st.resumeAt = null; if (st.status === "limit") safeTurn(dir, cfg, nextPrompt(st), false); }, Math.max(0, until - Date.now()) + 60000);
+  const resume = () => { clearTimeout(st.resumeTimer); st.resumeTimer = null; st.resumeAt = null; if (st.status === "limit") safeTurn(dir, cfg, nextPrompt(st), false); };
+  const check = async (first) => {
+    if (st.status !== "limit" || st.limitChecking) return;
+    st.limitChecking = true;
+    let freed = [];
+    try { freed = await verifyLimits(dir, st); } catch {} finally { st.limitChecking = false; }
+    if (st.status !== "limit") return;
+    if (freed.length || !fallback.waitUntil(cfg)) return resume();
+    if (first) push(st, { src: "system", kind: "system", text: `Claude·Codex 모두 사용량 한도 소진(실제 확인함) → ${fallback.hhmm(until)}에 자동으로 이어서 진행합니다. 그 전에도 15분마다 다시 확인합니다` });
+    const left = until - Date.now();
+    if (left > LIMIT_RECHECK + 60000) st.resumeTimer = setTimeout(() => check(false), LIMIT_RECHECK);
+    else st.resumeTimer = setTimeout(resume, Math.max(0, left) + 60000);
+  };
+  push(st, { src: "system", kind: "system", text: "Claude·Codex 모두 한도 기록이 있어 실제로 사용 가능한지 확인합니다…" });
+  check(true);
 }
 // 한도로 끊긴 턴을 다시 돌릴 때: 답만 하던 중이었으면 그 메시지를 다시, 아니면 계속 진행
 const nextPrompt = (st) => st.answerOnly || CONTINUE_MSG;
@@ -637,4 +682,4 @@ function view(dir, since = 0) {
   };
 }
 
-module.exports = { start, send, stop, reset, view, usage };
+module.exports = { start, send, stop, reset, view, usage, toolAvailable, verifyLimits };
